@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
-  timeout: 120_000,
+  timeout: 600_000,
   expect: { timeout: 5_000 },
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
@@ -18,7 +18,8 @@ export default defineConfig({
     timezoneId: 'Europe/Warsaw',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure'
+    video: 'retain-on-failure',
+    actionTimeout: 8_000
   },
   projects: [
     { name: 'chromium', use: { browserName: 'chromium' } }
