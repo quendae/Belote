@@ -31,6 +31,8 @@ jobs:
           s = client.read_text(encoding='utf-8')
           s = s.replace('<button class="action primary" data-mp-action="create">', '<button class="action primary" id="mpCreateButton" data-mp-action="create">')
           s = s.replace('<button class="action primary" data-mp-action="join">', '<button class="action primary" id="mpJoinButton" data-mp-action="join">')
+          s = s.replace("if(msg.type==='rejected') throw new Error(msg.reason||'rejected');", "if(msg.type==='rejected'){const message=signalError(msg.reason||'rejected');reset();renderModal();status('mpGuestStatus',message,true);return;}")
+          s = s.replace("else if(msg.type==='start')$('#multiplayerModal')?.classList.add('hidden');", "else if(msg.type==='start'){mp.inGame=true;$('#multiplayerModal')?.classList.add('hidden');}")
           client.write_text(s, encoding='utf-8')
 
           html = Path('belote_offline_single.html')
