@@ -1,54 +1,66 @@
-# Belote — Offline
+# Belote
 
-**A self-contained Belote card game for the browser, with bots, local play and direct P2P multiplayer.**
+**A browser-based Belote game with offline bots and private host-authoritative WebRTC multiplayer.**
 
 [English](README.md) · [Polski](README.pl.md) · [Deutsch](README.de.md)
 
-The entire game lives in a single file: [`belote_offline_single.html`](belote_offline_single.html). Download it and open it in a modern browser — no installation or build step is required.
+No framework or build step is required to play. The core game remains in [`belote_offline_single.html`](belote_offline_single.html); online multiplayer is isolated in [`belote_multiplayer.js`](belote_multiplayer.js), with a tiny optional signaling service under [`cloudflare-signaling/`](cloudflare-signaling/).
 
 ## Features
 
 - Classic four-player Belote in fixed partnerships: **North/South vs West/East**
 - 32-card deck: **7, 8, 9, 10, Jack, Queen, King, Ace**
-- Play against **3 bots**
-- **4-player local** pass-and-play mode on one device
-- **4-player WebRTC P2P multiplayer** without a dedicated game server
-- Optional password-protected private P2P rooms
+- Offline single-player against **3 bots**
+- Private **WebRTC P2P multiplayer** for four seats
+- Join with a short room code instead of manually exchanging SDP/ICE blobs
+- Optional password-protected rooms
+- Hybrid tables: **host + online guest(s) + host-side bots**
+- Host-authoritative rules and per-seat filtering of hidden information
 - Two bot styles: **Relaxed** and **Sharp**
 - Match targets: **301, 501 or 1001 points**
-- Built-in **tutorial** and quick rules reference
-- Table log and last-trick summary
-- Automatic local save with a **Continue game** option
-- Interface languages: **English, Polish and German**
-- Classic red/black card colours or a four-colour deck
-- Optional sounds and card animations
-- Responsive browser interface
+- Built-in tutorial, quick rules, table log and last-trick summary
+- Automatic offline save with **Continue game**
+- English, Polish and German UI
+- Classic red/black or four-colour deck
+- Optional sounds and animations
+- Responsive desktop, tablet and phone UI
 
-## Play
+The former pass-and-play local multiplayer mode has been removed. Multiplayer now means separate devices/browsers connected online.
 
-1. Download [`belote_offline_single.html`](belote_offline_single.html).
-2. Open it in a modern browser.
-3. Choose one of the available table modes:
-   - **You + 3 bots**
-   - **4 players local**
-   - **P2P multiplayer**
-4. Choose the match target and start dealing.
+## Play offline
 
-Bot and local modes can be played entirely offline after the file has been downloaded.
+1. Open [`belote_offline_single.html`](belote_offline_single.html) in a current browser.
+2. Choose **You + 3 bots**.
+3. Select the match target and bot style.
+4. Start the deal.
 
-## P2P multiplayer
+The bot game remains available without the signaling service and its match state is saved locally.
 
-Remote multiplayer uses **WebRTC**. There is no dedicated Belote game server: one player acts as the host, shuffles the cards and validates the game state, while each guest receives only the cards belonging to their own seat.
+## Online multiplayer
 
-Connection setup is intentionally manual:
+Online play uses a **host-authoritative P2P model**. The host browser runs the real simulation: it shuffles, owns the authoritative state, validates every bid and card play, and runs any bot seats. Guests send actions, not replacement game states.
 
-1. The host creates a private room and shares its room code.
-2. Each guest creates a join code and sends it to the host through any messenger.
-3. The host accepts it and sends the generated answer code back.
-4. The guest pastes the answer and connects.
-5. The match can start after all four seats are connected.
+Each guest receives a seat-filtered view. Opponent card identities and the future stock/deck order are not sent to that browser.
 
-A room may additionally be protected with a password. Internet connectivity and browser WebRTC support are required for remote P2P play.
+### Creating a table
+
+1. Open **Online multiplayer**.
+2. Enter a nickname, optional password, match target and bot difficulty.
+3. Choose **Create room**.
+4. Share the short room code with your friends.
+5. Fill any remaining empty seats with bots if desired.
+6. Start when all required seats are ready. At least one remote human guest is required.
+
+### Joining
+
+1. Open **Online multiplayer**.
+2. Enter your nickname and the room code.
+3. Enter the password if the host set one.
+4. Choose **Join** and wait in the synchronized lobby.
+
+The signaling service is used only to exchange the temporary WebRTC setup information. Once the DataChannels are established, gameplay is sent directly between browsers. If a player disconnects during the game, the current implementation pauses the table rather than attempting fragile automatic reconnection.
+
+> This architecture is intended for friendly/private games. Because the host owns the full authoritative state, a malicious host could inspect hidden cards. Cheating-resistant ranked play would require a trusted game server.
 
 ## Implemented rules
 
@@ -74,57 +86,45 @@ The implementation enforces the core Belote obligations:
 
 ### Card order and points
 
-In trump:
+Trump order: `J > 9 > A > 10 > K > Q > 8 > 7`
 
-`J > 9 > A > 10 > K > Q > 8 > 7`
+Trump values: J — 20, 9 — 14, A — 11, 10 — 10, K — 4, Q — 3, 8 / 7 — 0.
 
-Trump values:
+Non-trump order: `A > 10 > K > Q > J > 9 > 8 > 7`
 
-- J — 20
-- 9 — 14
-- A — 11
-- 10 — 10
-- K — 4
-- Q — 3
-- 8 / 7 — 0
+Non-trump values: A — 11, 10 — 10, K — 4, Q — 3, J — 2, 9 / 8 / 7 — 0.
 
-Outside trump:
-
-`A > 10 > K > Q > J > 9 > 8 > 7`
-
-Non-trump values:
-
-- A — 11
-- 10 — 10
-- K — 4
-- Q — 3
-- J — 2
-- 9 / 8 / 7 — 0
-
-The last trick is worth an additional **10 points**, for **162 points** available in a normal deal.
-
-If the team that selected trump does not score more than the opponents, the contract fails and the opponents receive **162 points** for the deal.
+The last trick is worth an additional **10 points**, for **162 points** available in a normal deal. If the team that selected trump does not score more than the opponents, the contract fails and the opponents receive **162 points** for the deal.
 
 ## Saving and privacy
 
-The current match and preferences are stored locally in the browser using `localStorage`.
+Offline matches and preferences are stored in browser `localStorage`. Live multiplayer connection/session objects are not written into the normal offline save slot.
 
-Saved data includes the current game state and preferences such as language, card colours, sounds and animations. Clearing browser site data may remove the saved match.
+The signaling backend stores only temporary room and WebRTC-establishment data. It contains no Belote rule engine.
 
-In P2P mode, gameplay data is exchanged directly between players through WebRTC. No dedicated game server is required.
+## Deployment
 
-## Technical notes
+For online multiplayer, serve both:
 
-The project is deliberately simple to distribute:
+- `belote_offline_single.html`
+- `belote_multiplayer.js`
 
-- one self-contained HTML file;
-- plain HTML, CSS and JavaScript;
-- no framework;
-- no package installation;
-- no build process required to play;
-- WebRTC for direct multiplayer connections;
-- browser `localStorage` for persistence.
+and deploy the signaling Worker from `cloudflare-signaling/`. The included Wrangler configuration targets `belote.qqnd.fyi/api/*`; change the route if the game is hosted elsewhere.
+
+See [`DEPLOY_MULTIPLAYER.md`](DEPLOY_MULTIPLAYER.md) for the Cloudflare Worker/Durable Object setup, health check, architecture notes and test commands.
+
+## Tests
+
+The repository includes Playwright regression coverage for the production Belote rules, multiplayer action routing, hidden-information filtering, hybrid human/bot tables and complete multiplayer deals. GitHub Actions also checks the signaling Worker.
+
+```bash
+npm install
+npx playwright install chromium
+npm run test:multiplayer
+npm run test:rules
+npm run test:design
+```
 
 ## Browser support
 
-A current desktop or mobile browser is recommended. Remote multiplayer additionally requires WebRTC and Web Crypto support.
+A current desktop or mobile browser is recommended. Online multiplayer requires HTTPS in production, WebRTC, Web Crypto and access to the signaling route. The default client uses STUN; particularly restrictive NAT/firewall environments may require a TURN service in the future.

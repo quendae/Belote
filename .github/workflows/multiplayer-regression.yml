@@ -1,0 +1,47 @@
+name: Multiplayer regression
+
+on:
+  push:
+    branches:
+      - main
+      - feature/real-p2p-multiplayer
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  multiplayer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install client test dependencies
+        run: npm install
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Static client checks
+        run: |
+          node --check belote_multiplayer.js
+          grep -q 'belote_multiplayer.js' belote_offline_single.html
+          ! grep -q 'data-action="new-local"' belote_offline_single.html
+          ! grep -q 'setInterval(mpTick,180)' belote_offline_single.html
+
+      - name: Multiplayer gameplay regression
+        run: npm run test:multiplayer
+
+      - name: Signaling Worker checks
+        working-directory: cloudflare-signaling
+        run: |
+          npm install
+          npm run check
+          npm run test:static

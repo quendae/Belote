@@ -20,7 +20,7 @@ const deck = suits.flatMap(s => ranks.map(r => ({ id: `${s}${r}-qa`, s, r })));
 function savedState(phase, iteration) {
   const base = {
     v: 2,
-    mode: 'local',
+    mode: 'bots',
     diff: 'smart',
     goal: [301, 501, 1001][iteration % 3],
     names: ['Tester', 'Lena', 'Marek', 'Nora'],
@@ -163,13 +163,13 @@ for (const viewport of viewports) {
         }
 
         const essentials = uiState === 'menu'
-          ? ['#mainMenu .menu-title', '#botsMenu', '#localMenu', '#learnMenu', '#language']
+          ? ['#mainMenu .menu-title', '#botsMenu', '#shareMenu', '#learnMenu', '#language']
           : uiState === 'settings'
             ? ['#settingsTitle', '#settingsLanguage', '#settingsCardColors', '#settingsSave']
             : uiState === 'rules'
               ? ['#rulesHead', '#rulesText']
               : uiState === 'multiplayer'
-                ? ['#multiplayerTitle', '#mpCreateButton', '#mpOfferButton']
+                ? ['#multiplayerTitle', '#mpCreateButton', '#mpJoinButton']
                 : ['.topbar', '.felt', '#prompt', '#rulesBtn', '#shareBtn', '#newBtn'];
 
         for (const selector of essentials) {

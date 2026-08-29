@@ -9,14 +9,25 @@ test('rules agent: production logic contract + 500 complete deals', async ({ pag
   await page.goto('/belote_offline_single.html');
   await page.waitForSelector('#mainMenu');
 
-  const bridgeReady = await page.evaluate(() => window.eval(`
+  const bridgeReady = await page.evaluate(() => {
+    window.__BELOTE_MANUAL_TEST__ = true;
+    const bridge = window.BeloteNetworkBridge;
+    if (!bridge) return false;
     window.__beloteQA = {
-      fresh, deck, legal, trickWinner, points, strength, completeDeal, sortHand, team,
-      getState: () => state,
-      setState: value => { state = value; return state; }
+      fresh: bridge.fresh,
+      deck: bridge.deck,
+      legal: bridge.legal,
+      trickWinner: bridge.trickWinner,
+      points: bridge.points,
+      strength: bridge.strength,
+      completeDeal: bridge.completeDeal,
+      sortHand: bridge.sortHand,
+      team: bridge.team,
+      getState: bridge.getState,
+      setState: bridge.setState
     };
-    true;
-  `));
+    return true;
+  });
   expect(bridgeReady, 'Could not expose production Belote logic to the rules agent').toBe(true);
 
   const report = await page.evaluate(games => {
@@ -79,7 +90,7 @@ test('rules agent: production logic contract + 500 complete deals', async ({ pag
     };
     const setState = overrides => {
       const value = {
-        ...Q.fresh('local', 1001, 'smart', 'Tester'),
+        ...Q.fresh('bots', 1001, 'smart', 'Tester'),
         phase: 'play', deal: 1, trump: 'H', bidder: 0,
         hands: [[], [], [], []], trick: [], ...overrides
       };
@@ -118,7 +129,7 @@ test('rules agent: production logic contract + 500 complete deals', async ({ pag
     check(sameCards(Q.legal(1), [c]), 'trump-led-overtrump', 'When trump is led, a higher trump is not mandatory');
 
     for (let game = 0; game < games; game++) {
-      const source = Q.fresh('local', 1001, game % 2 ? 'smart' : 'calm', `Tester-${game}`);
+      const source = Q.fresh('bots', 1001, game % 2 ? 'smart' : 'calm', `Tester-${game}`);
       source.dealer = game % 4;
       source.deal = game + 1;
       const cards = Q.deck();
