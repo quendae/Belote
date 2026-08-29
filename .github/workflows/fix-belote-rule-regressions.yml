@@ -1,0 +1,49 @@
+name: Fix exposed Belote rule regressions
+
+on:
+  push:
+    branches:
+      - feature/real-p2p-multiplayer
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/real-p2p-multiplayer
+          fetch-depth: 0
+
+      - name: Fix trick winner and mandatory overtrump
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('belote_offline_single.html')
+          s = path.read_text(encoding='utf-8')
+
+          old_legal = "function legal(p){let h=state.hands[p]; if(!state.trick.length)return h;let lead=state.trick[0].card.s, follow=h.filter(c=>c.s===lead);if(follow.length)return follow;let winner=trickWinner(), partner=winner!==null&&team(winner)===team(p);if(partner)return h;let trumps=h.filter(c=>c.s===state.trump);if(!trumps.length)return h;let winning=state.trick.find(x=>x.p===winner)?.card;if(winning?.s===state.trump){let over=trumps.filter(c=>strength(c,state.trump)>strength(winning,state.trump));return over.length?over:trumps}return trumps}"
+          new_legal = "function legal(p){let h=state.hands[p];if(!state.trick.length)return h;let lead=state.trick[0].card.s,follow=h.filter(c=>c.s===lead);if(follow.length){if(lead===state.trump){let winner=trickWinner(),winning=state.trick.find(x=>x.p===winner)?.card;if(winning?.s===state.trump){let over=follow.filter(c=>strength(c,state.trump)>strength(winning,state.trump));if(over.length)return over}}return follow}let winner=trickWinner(),partner=winner!==null&&team(winner)===team(p);if(partner)return h;let trumps=h.filter(c=>c.s===state.trump);if(!trumps.length)return h;let winning=state.trick.find(x=>x.p===winner)?.card;if(winning?.s===state.trump){let over=trumps.filter(c=>strength(c,state.trump)>strength(winning,state.trump));return over.length?over:trumps}return trumps}"
+          old_winner = "function trickWinner(){if(!state.trick.length)return null;let win=state.trick[0],lead=win.card.s;for(const x of state.trick.slice(1)){let a=x.card,b=win.card;if(a.s===state.trump&&(b.s!==state.trump||strength(a,state.trump)>strength(b,state.trump)))win=x;else if(a.s===b.s&&strength(a,state.trump)>strength(b,state.trump))win=x;else if(a.s===lead&&b.s!==state.trump)win=x}return win.p}"
+          new_winner = "function trickWinner(){if(!state.trick.length)return null;let win=state.trick[0];for(const x of state.trick.slice(1)){let a=x.card,b=win.card;if(a.s===state.trump&&b.s!==state.trump)win=x;else if(a.s===b.s&&strength(a,state.trump)>strength(b,state.trump))win=x}return win.p}"
+
+          if old_legal not in s:
+              raise SystemExit('legal() anchor not found')
+          if old_winner not in s:
+              raise SystemExit('trickWinner() anchor not found')
+          s = s.replace(old_legal, new_legal, 1).replace(old_winner, new_winner, 1)
+          path.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Commit rule fixes
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add belote_offline_single.html
+          git commit -m "Fix trick winner and mandatory trump overtake"
+          git push origin HEAD:feature/real-p2p-multiplayer
