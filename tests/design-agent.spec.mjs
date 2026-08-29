@@ -72,6 +72,12 @@ async function prepare(page, uiState, language, fourColors, iteration) {
   await page.reload();
   await page.waitForSelector('.app');
 
+  if (needsGame) {
+    const continueButton = page.locator('[data-action="continue"]');
+    await expect(continueButton, 'Saved game should expose a visible Continue action').toBeVisible();
+    await continueButton.click();
+  }
+
   if (uiState === 'settings') await page.locator('[data-action="settings"]').click();
   if (uiState === 'rules') await page.locator('[data-action="rules"]').click();
   if (uiState === 'multiplayer') await page.locator('[data-action="share"]').click();
