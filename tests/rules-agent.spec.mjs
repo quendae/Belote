@@ -79,7 +79,7 @@ test('rules agent: production logic contract + 500 complete deals', async ({ pag
     };
     const setState = overrides => {
       const value = {
-        ...Q.fresh('local', 1001, 'smart', 'Tester'),
+        ...Q.fresh('bots', 1001, 'smart', 'Tester'),
         phase: 'play', deal: 1, trump: 'H', bidder: 0,
         hands: [[], [], [], []], trick: [], ...overrides
       };
@@ -118,7 +118,7 @@ test('rules agent: production logic contract + 500 complete deals', async ({ pag
     check(sameCards(Q.legal(1), [c]), 'trump-led-overtrump', 'When trump is led, a higher trump is not mandatory');
 
     for (let game = 0; game < games; game++) {
-      const source = Q.fresh('local', 1001, game % 2 ? 'smart' : 'calm', `Tester-${game}`);
+      const source = Q.fresh('bots', 1001, game % 2 ? 'smart' : 'calm', `Tester-${game}`);
       source.dealer = game % 4;
       source.deal = game + 1;
       const cards = Q.deck();

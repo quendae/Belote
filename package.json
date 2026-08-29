@@ -5,7 +5,8 @@
   "scripts": {
     "test": "playwright test",
     "test:rules": "playwright test tests/rules-agent.spec.mjs --project=chromium",
-    "test:design": "playwright test tests/design-agent.spec.mjs --project=chromium"
+    "test:design": "playwright test tests/design-agent.spec.mjs --project=chromium",
+    "test:multiplayer": "playwright test tests/multiplayer-regression.spec.mjs --project=chromium"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0"

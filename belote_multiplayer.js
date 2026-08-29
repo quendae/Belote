@@ -147,13 +147,13 @@
           <label class="multiplayer-field"><span>${c.password}</span><input id="mpHostPassword" type="password" maxlength="64" autocomplete="new-password"><small>${c.passwordHelp}</small></label>
           <label class="multiplayer-field"><span>${c.goal}</span><select id="mpGoal"><option value="301">301</option><option value="501" selected>501</option><option value="1001">1001</option></select></label>
           <label class="multiplayer-field"><span>${c.botDifficulty}</span><select id="mpBotDifficulty"><option value="calm">${c.calm}</option><option value="smart" selected>${c.smart}</option></select></label>
-          <div class="multiplayer-actions"><button class="action primary" data-mp-action="create">${c.create}</button></div><p id="mpHostStatus" class="multiplayer-status" aria-live="polite"></p>
+          <div class="multiplayer-actions"><button class="action primary" id="mpCreateButton" data-mp-action="create">${c.create}</button></div><p id="mpHostStatus" class="multiplayer-status" aria-live="polite"></p>
         </section>
         <section class="multiplayer-section"><h3>${c.joinTitle}</h3>
           <label class="multiplayer-field"><span>${c.nick}</span><input id="mpGuestNick" maxlength="20" autocomplete="nickname" value="Gracz 2"></label>
           <label class="multiplayer-field"><span>${c.room}</span><input id="mpRoomCode" maxlength="9" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH"></label>
           <label class="multiplayer-field"><span>${c.password}</span><input id="mpGuestPassword" type="password" maxlength="64" autocomplete="current-password"></label>
-          <div class="multiplayer-actions"><button class="action primary" data-mp-action="join">${c.join}</button></div><p id="mpGuestStatus" class="multiplayer-status" aria-live="polite"></p>
+          <div class="multiplayer-actions"><button class="action primary" id="mpJoinButton" data-mp-action="join">${c.join}</button></div><p id="mpGuestStatus" class="multiplayer-status" aria-live="polite"></p>
         </section>
       </div>
       <section id="multiplayerLobby" class="multiplayer-section multiplayer-lobby hidden"><div class="room-summary"><div><div id="mpRoomDisplay" class="room-code">-</div><div id="mpRoomMeta" class="room-meta"></div></div><button class="action secondary" data-mp-action="copy">${c.copy}</button></div><p class="multiplayer-lead lobby-hint">${c.hint}</p><div id="mpLobbySeats" class="lobby-seats"></div><p id="mpLobbyStatus" class="multiplayer-status" aria-live="polite"></p><footer class="modal-actions"><button class="action secondary" data-mp-action="leave">${c.leave}</button><button class="action primary" data-mp-action="start" id="mpStartButton" disabled>${c.start}</button></footer></section>
