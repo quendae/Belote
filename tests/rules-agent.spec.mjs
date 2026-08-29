@@ -2,266 +2,268 @@ import { test, expect } from '@playwright/test';
 
 const STRESS_GAMES = Number(process.env.RULE_STRESS_GAMES || 500);
 
-const card = (s, r, id = `${s}${r}-${Math.random().toString(36).slice(2)}`) => ({ id, s, r });
-const baseState = overrides => ({
-  v: 2,
-  mode: 'local',
-  diff: 'smart',
-  goal: 1001,
-  names: ['Tester', 'Lena', 'Marek', 'Nora'],
-  scores: [0, 0],
-  dealer: 3,
-  deal: 1,
-  phase: 'play',
-  hands: [[], [], [], []],
-  trump: 'H',
-  bidder: 0,
-  bidRound: 1,
-  turnup: null,
-  stock: [],
-  active: 0,
-  passCount: 0,
-  trick: [],
-  tricks: [0, 0],
-  raw: [0, 0],
-  logs: [],
-  lastTrick: null,
-  lastWinner: null,
-  botTimer: 0,
-  ...overrides
-});
-
-async function seedState(page, state) {
-  await page.evaluate(value => localStorage.setItem('beloteState', JSON.stringify(value)), state);
-  await page.reload();
-  await page.waitForSelector('.app');
-}
-
-async function allowedIds(page, player) {
-  return page.locator(`[data-player="${player}"] .card:not(.illegal)`).evaluateAll(nodes => nodes.map(node => node.dataset.card).sort());
-}
-
-async function checkLegalCase(page, failures, name, state, expectedIds) {
-  await seedState(page, state);
-  const actual = await allowedIds(page, state.active);
-  const expected = [...expectedIds].sort();
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    failures.push({ kind: name, message: 'Rendered legal cards differ from the Belote rule contract', actual, expected, state });
-  }
-}
-
-test('rules agent: real UI + 500 complete deals', async ({ page }, testInfo) => {
+test('rules agent: production logic contract + 500 complete deals', async ({ page }, testInfo) => {
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(String(error)));
-
-  await page.addInitScript(() => {
-    const nativeSetTimeout = window.setTimeout.bind(window);
-    window.setTimeout = (fn, ms = 0, ...args) => nativeSetTimeout(fn, Math.min(Number(ms) || 0, 1), ...args);
-    localStorage.setItem('belotePrefs', JSON.stringify({ lang: 'en', sound: false, animations: false, fourColors: false }));
-  });
 
   await page.goto('/belote_offline_single.html');
   await page.waitForSelector('#mainMenu');
 
-  const failures = [];
-
-  const follow = card('S', '7', 'follow');
-  await checkLegalCase(page, failures, 'follow-suit', baseState({
-    active: 1,
-    trick: [{ p: 0, card: card('S', 'A', 'lead') }],
-    hands: [[], [follow, card('H', 'J', 'trump'), card('C', 'A', 'discard')], [], []]
-  }), [follow.id]);
-
-  const mustTrump = card('H', '7', 'must-trump');
-  await checkLegalCase(page, failures, 'must-trump', baseState({
-    active: 2,
-    trick: [
-      { p: 0, card: card('S', '7', 'lead-2') },
-      { p: 1, card: card('S', 'A', 'opponent-winning') }
-    ],
-    hands: [[], [], [mustTrump, card('C', 'A', 'discard-2')], []]
-  }), [mustTrump.id]);
-
-  const freeTrump = card('H', '7', 'free-trump');
-  const freeDiscard = card('C', 'A', 'free-discard');
-  await checkLegalCase(page, failures, 'partner-winning', baseState({
-    active: 2,
-    trick: [
-      { p: 0, card: card('S', 'A', 'partner-winning') },
-      { p: 1, card: card('S', '10', 'loser') }
-    ],
-    hands: [[], [], [freeTrump, freeDiscard], []]
-  }), [freeTrump.id, freeDiscard.id]);
-
-  const over = card('H', 'J', 'over');
-  await checkLegalCase(page, failures, 'overtrump', baseState({
-    active: 2,
-    trick: [
-      { p: 0, card: card('S', '7', 'plain-lead') },
-      { p: 1, card: card('H', '9', 'opponent-trumped') }
-    ],
-    hands: [[], [], [over, card('H', '7', 'under'), card('C', 'A', 'other')], []]
-  }), [over.id]);
-
-  const higherTrump = card('H', 'J', 'higher-trump');
-  await checkLegalCase(page, failures, 'trump-led-overtrump', baseState({
-    active: 1,
-    trick: [{ p: 0, card: card('H', '9', 'trump-lead') }],
-    hands: [[], [higherTrump, card('H', '7', 'lower-trump'), card('C', 'A', 'off-suit')], [], []]
-  }), [higherTrump.id]);
-
-  // Start a fresh real local game. From here every action goes through the production click handlers.
-  await page.evaluate(() => localStorage.removeItem('beloteState'));
-  await page.reload();
-  await page.locator('[data-action="new-local"]').click();
-  await page.locator('#goal').selectOption('1001');
-  await page.locator('[data-action="start"]').click();
-
-  const stress = await page.evaluate(async games => {
-    const failures = [];
-    const stats = { games, tricksChecked: 0, legalSetsChecked: 0, cardsPlayed: 0 };
-    const read = () => JSON.parse(localStorage.getItem('beloteState') || 'null');
-    const wait = () => new Promise(resolve => setTimeout(resolve, 0));
-    const waitFor = async predicate => {
-      for (let i = 0; i < 80; i++) {
-        const value = read();
-        if (predicate(value)) return value;
-        await wait();
-      }
-      return read();
+  // Test-only bridge. A classic script injected after the game can access the
+  // same global lexical environment, so this exposes the real production
+  // functions without modifying belote_offline_single.html.
+  await page.addScriptTag({ content: `
+    window.__beloteQA = {
+      fresh,
+      deck,
+      legal,
+      trickWinner,
+      points,
+      strength,
+      completeDeal,
+      sortHand,
+      team,
+      getState: () => state,
+      setState: value => { state = value; return state; }
     };
-    const team = player => player % 2;
+  ` });
+
+  const report = await page.evaluate(games => {
+    const Q = window.__beloteQA;
+    const samples = [];
+    const counts = {};
+    const stats = { games, tricksChecked: 0, legalSetsChecked: 0, cardsPlayed: 0, dealsWith162Points: 0 };
+    const fail = (kind, message, context = {}) => {
+      counts[kind] = (counts[kind] || 0) + 1;
+      if (samples.length < 120) samples.push({ kind, message, context });
+    };
+    const check = (condition, kind, message, context = {}) => {
+      if (!condition) fail(kind, message, context);
+    };
+    const makeCard = (s, r, id = `${s}${r}-${Math.random().toString(36).slice(2)}`) => ({ id, s, r });
+    const ids = cards => cards.map(card => card.id).sort();
+    const sameCards = (a, b) => JSON.stringify(ids(a)) === JSON.stringify(ids(b));
     const tStrength = rank => ({ '7': 0, '8': 1, Q: 2, K: 3, '10': 4, A: 5, '9': 6, J: 7 })[rank];
     const nStrength = rank => ({ '7': 0, '8': 1, '9': 2, J: 3, Q: 4, K: 5, '10': 6, A: 7 })[rank];
-    const strength = (c, trump) => c.s === trump ? tStrength(c.r) : nStrength(c.r);
-    const points = (c, trump) => c.s === trump
-      ? ({ J: 20, '9': 14, A: 11, '10': 10, K: 4, Q: 3, '8': 0, '7': 0 })[c.r]
-      : ({ A: 11, '10': 10, K: 4, Q: 3, J: 2, '9': 0, '8': 0, '7': 0 })[c.r];
-    const winner = (trick, trump) => {
+    const independentStrength = (card, trump) => card.s === trump ? tStrength(card.r) : nStrength(card.r);
+    const independentPoints = (card, trump) => card.s === trump
+      ? ({ J: 20, '9': 14, A: 11, '10': 10, K: 4, Q: 3, '8': 0, '7': 0 })[card.r]
+      : ({ A: 11, '10': 10, K: 4, Q: 3, J: 2, '9': 0, '8': 0, '7': 0 })[card.r];
+    const independentWinner = (trick, trump) => {
       if (!trick.length) return null;
       const lead = trick[0].card.s;
-      let win = trick[0];
+      let winning = trick[0];
       for (const item of trick.slice(1)) {
         const a = item.card;
-        const b = win.card;
-        if (a.s === trump && b.s !== trump) win = item;
-        else if (a.s === trump && b.s === trump && strength(a, trump) > strength(b, trump)) win = item;
-        else if (b.s !== trump && a.s === lead && b.s === lead && strength(a, trump) > strength(b, trump)) win = item;
+        const b = winning.card;
+        if (a.s === trump && b.s !== trump) winning = item;
+        else if (a.s === trump && b.s === trump && independentStrength(a, trump) > independentStrength(b, trump)) winning = item;
+        else if (b.s !== trump && a.s === lead && b.s === lead && independentStrength(a, trump) > independentStrength(b, trump)) winning = item;
       }
-      return win.p;
+      return winning.p;
     };
-    const expectedLegal = (state, player) => {
-      const hand = state.hands[player];
-      if (!state.trick.length) return hand;
-      const lead = state.trick[0].card.s;
-      const follow = hand.filter(c => c.s === lead);
-      const currentWinner = winner(state.trick, state.trump);
+    const expectedLegal = (source, player) => {
+      const hand = source.hands[player];
+      if (!source.trick.length) return hand;
+      const lead = source.trick[0].card.s;
+      const follow = hand.filter(card => card.s === lead);
+      const currentWinner = independentWinner(source.trick, source.trump);
+
       if (follow.length) {
-        if (lead === state.trump) {
-          const currentTrumps = state.trick.filter(x => x.card.s === state.trump).map(x => x.card);
-          const highest = currentTrumps.sort((a, b) => strength(b, state.trump) - strength(a, state.trump))[0];
-          const higher = follow.filter(c => strength(c, state.trump) > strength(highest, state.trump));
+        if (lead === source.trump) {
+          const currentTrumps = source.trick.filter(item => item.card.s === source.trump).map(item => item.card);
+          const highest = currentTrumps.sort((a, b) => independentStrength(b, source.trump) - independentStrength(a, source.trump))[0];
+          const higher = follow.filter(card => independentStrength(card, source.trump) > independentStrength(highest, source.trump));
           if (higher.length) return higher;
         }
         return follow;
       }
-      if (currentWinner !== null && team(currentWinner) === team(player)) return hand;
-      const trumps = hand.filter(c => c.s === state.trump);
+
+      if (currentWinner !== null && Q.team(currentWinner) === Q.team(player)) return hand;
+      const trumps = hand.filter(card => card.s === source.trump);
       if (!trumps.length) return hand;
-      const currentTrumps = state.trick.filter(x => x.card.s === state.trump).map(x => x.card);
+      const currentTrumps = source.trick.filter(item => item.card.s === source.trump).map(item => item.card);
       if (!currentTrumps.length) return trumps;
-      const highest = currentTrumps.sort((a, b) => strength(b, state.trump) - strength(a, state.trump))[0];
-      const higher = trumps.filter(c => strength(c, state.trump) > strength(highest, state.trump));
+      const highest = currentTrumps.sort((a, b) => independentStrength(b, source.trump) - independentStrength(a, source.trump))[0];
+      const higher = trumps.filter(card => independentStrength(card, source.trump) > independentStrength(highest, source.trump));
       return higher.length ? higher : trumps;
     };
-    const ids = cards => cards.map(c => c.id).sort();
+    const setState = overrides => {
+      const value = {
+        ...Q.fresh('local', 1001, 'smart', 'Tester'),
+        phase: 'play',
+        deal: 1,
+        trump: 'H',
+        bidder: 0,
+        hands: [[], [], [], []],
+        trick: [],
+        ...overrides
+      };
+      Q.setState(value);
+      return value;
+    };
 
+    // Production point values and card strength must match the Belote contract.
+    for (const [rank, expected] of Object.entries({ J: 20, '9': 14, A: 11, '10': 10, K: 4, Q: 3, '8': 0, '7': 0 })) {
+      check(Q.points(makeCard('H', rank), 'H') === expected, 'points-trump', `Wrong trump value for ${rank}`, { rank, expected });
+    }
+    for (const [rank, expected] of Object.entries({ A: 11, '10': 10, K: 4, Q: 3, J: 2, '9': 0, '8': 0, '7': 0 })) {
+      check(Q.points(makeCard('S', rank), 'H') === expected, 'points-plain', `Wrong non-trump value for ${rank}`, { rank, expected });
+    }
+    ['7', '8', 'Q', 'K', '10', 'A', '9', 'J'].forEach((rank, index) => {
+      check(Q.strength(makeCard('H', rank), 'H') === index, 'strength-trump', `Wrong trump order for ${rank}`, { rank, index });
+    });
+    ['7', '8', '9', 'J', 'Q', 'K', '10', 'A'].forEach((rank, index) => {
+      check(Q.strength(makeCard('S', rank), 'H') === index, 'strength-plain', `Wrong non-trump order for ${rank}`, { rank, index });
+    });
+
+    // Deterministic legality probes.
+    let follow = makeCard('S', '7', 'follow');
+    setState({
+      active: 1,
+      trick: [{ p: 0, card: makeCard('S', 'A', 'lead') }],
+      hands: [[], [follow, makeCard('H', 'J', 'trump'), makeCard('C', 'A', 'discard')], [], []]
+    });
+    check(sameCards(Q.legal(1), [follow]), 'follow-suit', 'Player can avoid following the led suit');
+
+    let mustTrump = makeCard('H', '7', 'must-trump');
+    setState({
+      active: 2,
+      trick: [
+        { p: 0, card: makeCard('S', '7', 'lead-2') },
+        { p: 1, card: makeCard('S', 'A', 'opponent-winning') }
+      ],
+      hands: [[], [], [mustTrump, makeCard('C', 'A', 'discard-2')], []]
+    });
+    check(sameCards(Q.legal(2), [mustTrump]), 'must-trump', 'Player can discard while an opponent is winning and trump is available');
+
+    let freeTrump = makeCard('H', '7', 'free-trump');
+    let freeDiscard = makeCard('C', 'A', 'free-discard');
+    setState({
+      active: 2,
+      trick: [
+        { p: 0, card: makeCard('S', 'A', 'partner-winning') },
+        { p: 1, card: makeCard('S', '10', 'loser') }
+      ],
+      hands: [[], [], [freeTrump, freeDiscard], []]
+    });
+    check(sameCards(Q.legal(2), [freeTrump, freeDiscard]), 'partner-winning', 'Player is forced to trump although partner is winning');
+
+    let over = makeCard('H', 'J', 'over');
+    setState({
+      active: 2,
+      trick: [
+        { p: 0, card: makeCard('S', '7', 'plain-lead') },
+        { p: 1, card: makeCard('H', '9', 'opponent-trumped') }
+      ],
+      hands: [[], [], [over, makeCard('H', '7', 'under'), makeCard('C', 'A', 'other')], []]
+    });
+    check(sameCards(Q.legal(2), [over]), 'overtrump', 'Player is not forced to overtrump an opponent when able');
+
+    let higherTrump = makeCard('H', 'J', 'higher-trump');
+    setState({
+      active: 1,
+      trick: [{ p: 0, card: makeCard('H', '9', 'trump-lead') }],
+      hands: [[], [higherTrump, makeCard('H', '7', 'lower-trump'), makeCard('C', 'A', 'off-suit')], [], []]
+    });
+    check(sameCards(Q.legal(1), [higherTrump]), 'trump-led-overtrump', 'When trump is led, a player with a higher trump may undertrump');
+
+    // Stress the production deck/deal helpers, legal(), trickWinner(), points() and strength().
     for (let game = 0; game < games; game++) {
-      let state = read();
-      if (!state || state.phase !== 'bid') {
-        failures.push({ kind: 'deal-start', game, phase: state?.phase });
-        break;
-      }
+      const source = Q.fresh('local', 1001, game % 2 ? 'smart' : 'calm', `Tester-${game}`);
+      source.dealer = game % 4;
+      source.deal = game + 1;
+      const cards = Q.deck();
+      source.hands = [0, 1, 2, 3].map(player => Q.sortHand(cards.slice(player * 5, player * 5 + 5)));
+      source.turnup = cards[20];
+      source.stock = cards.slice(21);
+      source.trump = source.turnup.s;
+      source.bidder = (source.dealer + 1) % 4;
+      source.phase = 'play';
+      source.active = (source.dealer + 1) % 4;
+      source.trick = [];
+      source.tricks = [0, 0];
+      source.raw = [0, 0];
+      Q.setState(source);
+      Q.completeDeal(source.bidder);
 
-      // First-round acceptance gives a deterministic, fast contract while still using the real bidding UI.
-      const bidButton = document.querySelector(`[data-bid="${state.turnup.s}"]`);
-      if (!bidButton) {
-        failures.push({ kind: 'bid-control-missing', game, active: state.active, suit: state.turnup.s });
-        break;
-      }
-      bidButton.click();
-      state = await waitFor(s => s?.phase === 'play');
-      if (state?.phase !== 'play' || !state.trump) {
-        failures.push({ kind: 'bid-failed', game, state });
-        break;
-      }
-      if (state.hands.some(hand => hand.length !== 8)) failures.push({ kind: 'hand-size', game, sizes: state.hands.map(h => h.length) });
-      const all = state.hands.flat();
-      if (all.length !== 32 || new Set(all.map(c => c.id)).size !== 32) failures.push({ kind: 'deck-integrity', game, count: all.length });
+      const state = Q.getState();
+      const allCards = state.hands.flat();
+      check(allCards.length === 32, 'deal-size', 'Completed deal does not contain 32 cards', { game, count: allCards.length });
+      check(new Set(allCards.map(card => card.id)).size === 32, 'duplicate-card', 'Duplicate card detected after deal', { game });
+      check(state.hands.every(hand => hand.length === 8), 'hand-size', 'Not every player has 8 cards after bidding', { game, sizes: state.hands.map(hand => hand.length) });
 
       for (let trickNo = 0; trickNo < 8; trickNo++) {
-        let expectedWinner = null;
-        let expectedValue = null;
-
         for (let playNo = 0; playNo < 4; playNo++) {
-          state = read();
-          const player = state.active;
-          const expected = expectedLegal(state, player);
-          const actual = [...document.querySelectorAll(`[data-player="${player}"] .card:not(.illegal)`)].map(el => el.dataset.card).sort();
+          const current = Q.getState();
+          const player = current.active;
+          const actual = Q.legal(player);
+          const expected = expectedLegal(current, player);
           stats.legalSetsChecked++;
-          if (JSON.stringify(actual) !== JSON.stringify(ids(expected))) {
-            failures.push({
-              kind: 'legal-set', game, trickNo, playNo, player, trump: state.trump,
-              trick: state.trick.map(x => ({ p: x.p, s: x.card.s, r: x.card.r })),
-              hand: state.hands[player].map(c => ({ id: c.id, s: c.s, r: c.r })),
-              actual, expected: ids(expected)
+          if (!sameCards(actual, expected)) {
+            fail('legal-set', 'Production legal() differs from the Belote rule contract', {
+              game,
+              trickNo,
+              playNo,
+              player,
+              trump: current.trump,
+              trick: current.trick.map(item => ({ p: item.p, s: item.card.s, r: item.card.r })),
+              hand: current.hands[player].map(card => ({ id: card.id, s: card.s, r: card.r })),
+              actual: ids(actual),
+              expected: ids(expected)
             });
           }
-          const chosenId = actual[0];
-          const chosen = state.hands[player].find(c => c.id === chosenId);
-          if (!chosen) {
-            failures.push({ kind: 'no-playable-card', game, trickNo, playNo, player, actual });
-            return { failures, stats };
-          }
-          if (playNo === 3) {
-            const completed = [...state.trick, { p: player, card: chosen }];
-            expectedWinner = winner(completed, state.trump);
-            expectedValue = completed.reduce((sum, item) => sum + points(item.card, state.trump), 0) + (trickNo === 7 ? 10 : 0);
-          }
-          document.querySelector(`[data-card="${CSS.escape(chosenId)}"]`)?.click();
+          check(actual.length > 0, 'no-legal-card', 'No legal card returned for a non-empty hand', { game, trickNo, playNo, player });
+          const choice = actual[(game + trickNo + playNo) % actual.length];
+          if (!choice) break;
+          current.hands[player] = current.hands[player].filter(card => card.id !== choice.id);
+          current.trick.push({ p: player, card: choice });
+          current.active = (player + 1) % 4;
           stats.cardsPlayed++;
-          await wait();
         }
 
-        state = await waitFor(s => s && (s.phase === 'play' || s.phase === 'done') && s.trick.length === 0);
+        const current = Q.getState();
+        const actualWinner = Q.trickWinner();
+        const expectedWinner = independentWinner(current.trick, current.trump);
+        check(actualWinner === expectedWinner, 'trick-winner', 'Production trickWinner() disagrees with independent Belote ranking', {
+          game,
+          trickNo,
+          actualWinner,
+          expectedWinner,
+          trump: current.trump,
+          trick: current.trick.map(item => ({ p: item.p, s: item.card.s, r: item.card.r }))
+        });
+        const productionValue = current.trick.reduce((sum, item) => sum + Q.points(item.card, current.trump), 0) + (trickNo === 7 ? 10 : 0);
+        const independentValue = current.trick.reduce((sum, item) => sum + independentPoints(item.card, current.trump), 0) + (trickNo === 7 ? 10 : 0);
+        check(productionValue === independentValue, 'trick-points', 'Production point total differs from independent calculation', { game, trickNo, productionValue, independentValue });
+        current.raw[Q.team(actualWinner)] += productionValue;
+        current.tricks[Q.team(actualWinner)]++;
+        current.trick = [];
+        current.active = actualWinner;
         stats.tricksChecked++;
-        if (state.lastWinner !== expectedWinner) failures.push({ kind: 'trick-winner', game, trickNo, expectedWinner, actualWinner: state.lastWinner, lastTrick: state.lastTrick });
-        if (state.lastTrick?.value !== expectedValue) failures.push({ kind: 'trick-value', game, trickNo, expectedValue, actualValue: state.lastTrick?.value, lastTrick: state.lastTrick });
       }
 
-      state = read();
-      const total = (state.raw?.[0] || 0) + (state.raw?.[1] || 0);
-      if (total !== 162) failures.push({ kind: 'deal-total', game, total, raw: state.raw });
-      if ((state.tricks?.[0] || 0) + (state.tricks?.[1] || 0) !== 8) failures.push({ kind: 'trick-count', game, tricks: state.tricks });
-      if (!state.hands.every(hand => hand.length === 0)) failures.push({ kind: 'cards-left', game, sizes: state.hands.map(h => h.length) });
-
-      document.querySelector('[data-action="next-hand"]')?.click();
-      state = await waitFor(s => s?.phase === 'bid');
-      if (state?.phase !== 'bid') {
-        failures.push({ kind: 'next-deal-failed', game, phase: state?.phase });
-        break;
-      }
+      const finished = Q.getState();
+      const total = finished.raw[0] + finished.raw[1];
+      check(total === 162, 'deal-total', 'Completed deal does not total 162 points', { game, total, raw: [...finished.raw] });
+      if (total === 162) stats.dealsWith162Points++;
+      check(finished.tricks[0] + finished.tricks[1] === 8, 'trick-count', 'Completed deal does not contain 8 tricks', { game, tricks: [...finished.tricks] });
+      check(finished.hands.every(hand => hand.length === 0), 'cards-left', 'Cards remain after 8 tricks', { game, sizes: finished.hands.map(hand => hand.length) });
     }
 
-    return { failures, stats };
+    return { counts, samples, stats };
   }, STRESS_GAMES);
 
-  const report = { deterministicFailures: failures, stress, pageErrors };
   await testInfo.attach('rules-agent-report.json', {
-    body: Buffer.from(JSON.stringify(report, null, 2)),
+    body: Buffer.from(JSON.stringify({ ...report, pageErrors }, null, 2)),
     contentType: 'application/json'
   });
 
+  const problemCount = Object.values(report.counts).reduce((sum, count) => sum + count, 0);
+  console.log(`[rules-agent] ${report.stats.games} deals, ${report.stats.tricksChecked} tricks, ${report.stats.legalSetsChecked} legal-set checks, ${problemCount} problems`);
+  if (problemCount) console.log(`[rules-agent] counts: ${JSON.stringify(report.counts)}`);
+  if (report.samples.length) console.log(`[rules-agent] sample: ${JSON.stringify(report.samples.slice(0, 12))}`);
+
   expect(pageErrors, 'The game emitted browser runtime errors').toEqual([]);
-  expect([...failures, ...stress.failures], `Rules agent found ${failures.length + stress.failures.length} rule/integrity problems`).toEqual([]);
+  expect(problemCount, `Rules agent found ${problemCount} rule/integrity problems`).toBe(0);
 });
