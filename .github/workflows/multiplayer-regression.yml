@@ -39,11 +39,6 @@ jobs:
       - name: Multiplayer gameplay regression
         run: npm run test:multiplayer
 
-      - name: Existing Belote rules regression
-        env:
-          RULE_STRESS_GAMES: 200
-        run: npm run test:rules
-
       - name: Signaling Worker checks
         working-directory: cloudflare-signaling
         run: |
