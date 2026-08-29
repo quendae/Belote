@@ -274,7 +274,7 @@
   }
   async function handleGuestSignal(msg) {
     if(msg.type==='answer'&&mp.guestPc){mp.seat=msg.seat;mp.names[mp.seat]=mp.nick;await mp.guestPc.setRemoteDescription(msg.sdp);return;}
-    if(msg.type==='rejected') throw new Error(msg.reason||'rejected');
+    if(msg.type==='rejected'){const message=signalError(msg.reason||'rejected');reset();renderModal();status('mpGuestStatus',message,true);return;}
     if(msg.type==='room-closed'&&!mp.inGame) status('mpLobbyStatus',text().expired,true);
   }
 
@@ -289,7 +289,7 @@
     mp.guestChannel=channel;
     channel.onopen=()=>{sendChannel(channel,{v:PROTOCOL,type:'hello',room:mp.room,nick:mp.nick});signalSend({type:'connected'});status('mpLobbyStatus',text().joined);updateNetworkPill(true);};
     channel.onclose=()=>{if(mp.inGame)pauseGame();}; channel.onerror=()=>{if(mp.inGame)pauseGame();};
-    channel.onmessage=(event)=>{if(typeof event.data!=='string'||event.data.length>250000)return;let msg;try{msg=JSON.parse(event.data)}catch{return}if(msg.v!==PROTOCOL)return;if(msg.type==='welcome'||msg.type==='lobby')applyLobby(msg);else if(msg.type==='start')$('#multiplayerModal')?.classList.add('hidden');else if(msg.type==='state')applyRemoteState(msg.state,msg.revision);else if(msg.type==='pause')pauseGame(msg.message);else if(msg.type==='error')Game.toast(msg.message||'Action rejected');};
+    channel.onmessage=(event)=>{if(typeof event.data!=='string'||event.data.length>250000)return;let msg;try{msg=JSON.parse(event.data)}catch{return}if(msg.v!==PROTOCOL)return;if(msg.type==='welcome'||msg.type==='lobby')applyLobby(msg);else if(msg.type==='start'){mp.inGame=true;$('#multiplayerModal')?.classList.add('hidden');}else if(msg.type==='state')applyRemoteState(msg.state,msg.revision);else if(msg.type==='pause')pauseGame(msg.message);else if(msg.type==='error')Game.toast(msg.message||'Action rejected');};
   }
 
   function toggleBot(seat) {
