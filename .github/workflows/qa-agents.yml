@@ -1,0 +1,83 @@
+name: Belote QA agents
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rules-agent:
+    name: Rules agent · 500 deals
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RULE_STRESS_GAMES: 500
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Belote rules agent
+        run: npm run test:rules
+
+      - name: Upload rules report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rules-agent-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  design-agent:
+    name: Playwright design agent · 6 viewports × 24 sweeps
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DESIGN_SWEEPS_PER_VIEWPORT: 24
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run responsive Playwright agent
+        run: npm run test:design
+
+      - name: Upload screenshots and design report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: design-agent-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
