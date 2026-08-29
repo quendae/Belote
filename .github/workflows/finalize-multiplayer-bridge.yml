@@ -41,12 +41,49 @@ jobs:
               raise SystemExit('isBotControlled anchor not found')
 
           html.write_text(s, encoding='utf-8')
+
+          rules = Path('tests/rules-agent.spec.mjs')
+          r = rules.read_text(encoding='utf-8')
+          old_rules = '''  const bridgeReady = await page.evaluate(() => window.eval(`
+    window.__beloteQA = {
+      fresh, deck, legal, trickWinner, points, strength, completeDeal, sortHand, team,
+      getState: () => state,
+      setState: value => { state = value; return state; }
+    };
+    true;
+  `));'''
+          new_rules = '''  const bridgeReady = await page.evaluate(() => {
+    window.__BELOTE_MANUAL_TEST__ = true;
+    const bridge = window.BeloteNetworkBridge;
+    if (!bridge) return false;
+    window.__beloteQA = {
+      fresh: bridge.fresh,
+      deck: bridge.deck,
+      legal: bridge.legal,
+      trickWinner: bridge.trickWinner,
+      points: bridge.points,
+      strength: bridge.strength,
+      completeDeal: bridge.completeDeal,
+      sortHand: bridge.sortHand,
+      team: bridge.team,
+      getState: bridge.getState,
+      setState: bridge.setState
+    };
+    return true;
+  });'''
+          if old_rules in r:
+              r = r.replace(old_rules, new_rules, 1)
+          elif new_rules not in r:
+              raise SystemExit('rules QA bridge anchor not found')
+          rules.write_text(r, encoding='utf-8')
           PY
 
-      - name: Validate generated client
+      - name: Validate generated client and QA
         run: |
           grep -q 'deck,trickWinner,points,strength,completeDeal,sortHand,team' belote_offline_single.html
           grep -q '__BELOTE_MANUAL_TEST__' belote_offline_single.html
+          grep -q 'const bridge = window.BeloteNetworkBridge' tests/rules-agent.spec.mjs
+          ! grep -q 'window.eval' tests/rules-agent.spec.mjs
           git diff --check
 
       - name: Commit bridge
@@ -57,6 +94,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add belote_offline_single.html
-          git commit -m "Expose Belote rules helpers for regression QA"
+          git add belote_offline_single.html tests/rules-agent.spec.mjs
+          git commit -m "Use explicit Belote bridge in rules regression"
           git push origin HEAD:feature/real-p2p-multiplayer
