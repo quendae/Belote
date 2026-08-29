@@ -18,14 +18,17 @@ async function driveDeal(page, config) {
   await page.evaluate((cfg) => window.BeloteMultiplayerRuntime.debug.startHost({ ...cfg, goal: 301 }), config);
 
   let forcedBid = false;
-  for (let step = 0; step < 500; step++) {
+  // A production trick intentionally spends ~950 ms in the trick-result phase.
+  // Give the real game loop enough wall-clock time instead of treating that UI delay as a deadlock.
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
     const snapshot = await page.evaluate(() => window.BeloteMultiplayerRuntime.debug.state());
     if (snapshot.phase === 'done') return snapshot;
 
     const botSeats = new Set(config.botSeats);
     const active = snapshot.active;
     if (botSeats.has(active)) {
-      await page.waitForTimeout(5);
+      await page.waitForTimeout(10);
       continue;
     }
 
@@ -48,9 +51,11 @@ async function driveDeal(page, config) {
       continue;
     }
 
-    await page.waitForTimeout(5);
+    await page.waitForTimeout(10);
   }
-  throw new Error(`Deal did not finish for ${config.name}`);
+
+  const finalSnapshot = await page.evaluate(() => window.BeloteMultiplayerRuntime.debug.state());
+  throw new Error(`Deal did not finish for ${config.name}; phase=${finalSnapshot.phase}, active=${finalSnapshot.active}, tricks=${finalSnapshot.tricks.join('/')}, handSizes=${finalSnapshot.hands.map(h => h.length).join('/')}`);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -63,7 +68,8 @@ test('multiplayer v2 replaces local pass-and-play and manual SDP exchange', asyn
   await expect(page.locator('[data-action="new-local"]')).toHaveCount(0);
   await expect(page.locator('#mode option[value="local"]')).toHaveCount(0);
 
-  await page.locator('#shareBtn').click();
+  // The start-menu overlay is intentionally above the in-game control bar.
+  await page.locator('#mainMenu .menu-btn[data-action="share"]').click();
   await expect(page.locator('#multiplayerModal')).toBeVisible();
   await expect(page.locator('#mpCreateButton')).toBeVisible();
   await expect(page.locator('#mpJoinButton')).toBeVisible();
@@ -114,6 +120,7 @@ test('lobby requires at least one remote human and accepts host-side bot seats',
 
 for (const config of CONFIGS) {
   test(`complete host-authoritative deal: ${config.name}`, async ({ page }) => {
+    test.setTimeout(30_000);
     const final = await driveDeal(page, config);
     expect(final.phase).toBe('done');
     expect(final.hands.every(hand => hand.length === 0)).toBe(true);
