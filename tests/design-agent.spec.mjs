@@ -80,7 +80,7 @@ async function prepare(page, uiState, language, fourColors, iteration) {
 
   if (uiState === 'settings') await page.locator('[data-action="settings"]').click();
   if (uiState === 'rules') await page.locator('[data-action="rules"]').click();
-  if (uiState === 'multiplayer') await page.locator('[data-action="share"]').click();
+  if (uiState === 'multiplayer') await page.locator('#shareBtn').click();
 }
 
 for (const viewport of viewports) {
@@ -231,6 +231,10 @@ for (const viewport of viewports) {
       body: Buffer.from(JSON.stringify(report, null, 2)),
       contentType: 'application/json'
     });
+
+    console.log(`[design-agent] ${viewport.name}: ${criticals.length} critical, ${warnings.length} warnings across ${SWEEPS} sweeps`);
+    if (criticals.length) console.log(`[design-agent] critical sample: ${JSON.stringify(criticals.slice(0, 12))}`);
+    if (warnings.length) console.log(`[design-agent] warning sample: ${JSON.stringify(warnings.slice(0, 12))}`);
 
     expect(pageErrors, 'The UI emitted browser runtime errors').toEqual([]);
     expect(criticals, `Responsive agent found ${criticals.length} critical layout/access problems`).toEqual([]);
