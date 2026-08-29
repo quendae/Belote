@@ -1,0 +1,62 @@
+name: Finalize multiplayer QA bridge
+
+on:
+  push:
+    branches:
+      - feature/real-p2p-multiplayer
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/real-p2p-multiplayer
+          fetch-depth: 0
+
+      - name: Expose production rules helpers to QA
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          html = Path('belote_offline_single.html')
+          s = html.read_text(encoding='utf-8')
+
+          old = 'fresh,deal,render,legal,bidSuits,bid,play,persist,nextBot,'
+          new = 'fresh,deal,render,legal,bidSuits,bid,play,persist,nextBot,deck,trickWinner,points,strength,completeDeal,sortHand,team,'
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif new not in s:
+              raise SystemExit('BeloteNetworkBridge export anchor not found')
+
+          old_bot = 'function isBotControlled(p){if(!Number.isInteger(p))return false;'
+          new_bot = 'function isBotControlled(p){if(window.__BELOTE_MANUAL_TEST__)return false;if(!Number.isInteger(p))return false;'
+          if old_bot in s:
+              s = s.replace(old_bot, new_bot, 1)
+          elif new_bot not in s:
+              raise SystemExit('isBotControlled anchor not found')
+
+          html.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Validate generated client
+        run: |
+          grep -q 'deck,trickWinner,points,strength,completeDeal,sortHand,team' belote_offline_single.html
+          grep -q '__BELOTE_MANUAL_TEST__' belote_offline_single.html
+          git diff --check
+
+      - name: Commit bridge
+        run: |
+          if git diff --quiet; then
+            echo "No changes needed."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add belote_offline_single.html
+          git commit -m "Expose Belote rules helpers for regression QA"
+          git push origin HEAD:feature/real-p2p-multiplayer
