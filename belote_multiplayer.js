@@ -7,6 +7,32 @@
 
   const Game = window.BeloteNetworkBridge;
 
+  // Critical card visuals live in the runtime too, not only in the optional shared
+  // stylesheet. This keeps production correct when belote_cards.css is stale,
+  // cached independently, or unavailable on a static host.
+  const runtimeCardStyle = document.createElement('style');
+  runtimeCardStyle.id = 'belote-runtime-card-style';
+  runtimeCardStyle.textContent = `
+    .card-back {
+      border-color: #efe6d0 !important;
+      background: repeating-linear-gradient(45deg, #19375d 0 6px, #244d80 6px 12px) !important;
+    }
+    .card-back::before {
+      content: "";
+      position: absolute;
+      inset: 4px;
+      border: 1px solid rgba(255,255,255,.60);
+      border-radius: 5px;
+      pointer-events: none;
+    }
+    .card-flight,
+    .card-flight.arrived {
+      opacity: 1 !important;
+    }
+  `;
+  document.head.appendChild(runtimeCardStyle);
+  window.BELOTE_CLIENT_VERSION = '2026.09.10-card-runtime-2';
+
   // The offline default player label is "Ty", while online nicknames require 3+ chars.
   const normalizeDefaultNickname = () => {
     const input = document.querySelector('#playerName');
@@ -24,7 +50,7 @@
 
   const cardStyle = document.createElement('link');
   cardStyle.rel = 'stylesheet';
-  cardStyle.href = 'belote_cards.css';
+  cardStyle.href = 'belote_cards.css?v=20260910-card-runtime-2';
   cardStyle.dataset.beloteCards = 'shared';
   document.head.appendChild(cardStyle);
 
