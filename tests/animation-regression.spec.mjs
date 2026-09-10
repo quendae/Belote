@@ -27,7 +27,9 @@ test('played card remains visible until the real trick card takes over', async (
     document.querySelector('#mainMenu')?.classList.add('hidden');
   });
 
-  await page.evaluate(() => window.BeloteNetworkBridge.play(0, 'anim-H-A'));
+  await page.evaluate(() => {
+    window.BeloteNetworkBridge.play(0, 'anim-H-A');
+  });
   const flight = page.locator('.card-flight');
   await expect(flight).toHaveCount(1);
 
