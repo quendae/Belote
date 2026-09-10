@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/qqnd-authoritative-multiplayer
+      - fix/card-animation-handoff
   pull_request:
     branches:
       - main
@@ -40,3 +41,6 @@ jobs:
 
       - name: Multiplayer gameplay regression
         run: npm run test:multiplayer
+
+      - name: Card animation handoff regression
+        run: npx playwright test tests/animation-regression.spec.mjs --project=chromium
