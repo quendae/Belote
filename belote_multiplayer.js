@@ -113,7 +113,7 @@
 
   const trickKey = (state) => state?.trick?.map(item => item?.card?.id).filter(Boolean).join('|') || '';
 
-  const animateTrickCollection = (state) => {
+  const animateTrickCollection = (state, entryBarrier = null) => {
     if (!state || state.phase !== 'trick' || !Array.isArray(state.trick) || state.trick.length !== 4) return;
 
     const key = trickKey(state);
@@ -124,19 +124,12 @@
       return;
     }
 
-    // The fourth card must visibly finish the same 280 ms table-entry motion as
-    // every other card. Only after all still-running entry animations settle do
-    // we start moving the complete trick toward its winner.
-    const runningEntries = Array.from(document.querySelectorAll('#trick .trick-card'))
-      .flatMap(node => node.getAnimations())
-      .filter(animation => {
-        const duration = Number(animation.effect?.getComputedTiming?.()?.duration || 0);
-        return duration >= 240 && duration <= 350 && animation.playState !== 'finished';
-      });
-
-    if (runningEntries.length) {
+    // The fourth card is the semantic barrier. Collection cannot begin until the
+    // exact table-entry animation created for state.trick.at(-1) has completed.
+    // This avoids races between multiple MutationObserver passes.
+    if (entryBarrier && entryBarrier.playState !== 'finished') {
       pendingCollectionKey = key;
-      Promise.allSettled(runningEntries.map(animation => animation.finished)).then(() => {
+      Promise.resolve(entryBarrier.finished).catch(() => undefined).then(() => {
         if (pendingCollectionKey === key) pendingCollectionKey = '';
         const current = Game?.getState?.();
         if (trickKey(current) === key) animateTrickCollection(current);
@@ -191,6 +184,9 @@
     const state = Game?.getState?.();
     const trick = state?.trick || [];
     const currentIds = new Set(trick.map(item => item?.card?.id).filter(Boolean));
+    const lastCardId = trick.at(-1)?.card?.id || '';
+    let lastCardEntry = null;
+
     if (!currentIds.size) {
       seenTrickCards.clear();
       collectedTrickKey = '';
@@ -201,11 +197,12 @@
       const id = node.querySelector('[data-card]')?.dataset.card;
       if (!id || !currentIds.has(id) || seenTrickCards.has(id)) return;
       node.dataset.beloteCardId = id;
-      animateTableEntry(node);
+      const entry = animateTableEntry(node);
+      if (id === lastCardId) lastCardEntry = entry;
       seenTrickCards.add(id);
     });
 
-    animateTrickCollection(state);
+    animateTrickCollection(state, lastCardEntry);
   };
 
   const finishLegacyFlight = (flight) => {
