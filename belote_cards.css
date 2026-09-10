@@ -121,6 +121,48 @@ body.four-colors .card.suit-D { color: #236ae0 !important; }
   .card-back::before { inset: 3px; border-radius: 4px; }
 }
 
+/* 360px phones: shrink intrinsic grid/form content instead of allowing long
+   select labels, modal copy, or bid controls to widen the page. */
+@media (max-width: 400px) {
+  html,
+  body,
+  .app { width: 100%; max-width: 100%; overflow-x: clip; }
+  .overlay,
+  .modal { width: 100%; max-width: 100%; padding: 10px; overflow-x: clip; }
+  .menu-card,
+  .modal-card,
+  .settings-card,
+  .multiplayer-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 18px 14px;
+  }
+  .modal-card *,
+  .menu-card *,
+  .settings-grid,
+  .settings-grid .option-card,
+  .form-grid,
+  .form-grid .option-card,
+  .bid-actions,
+  .contract-control {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .option-card select,
+  .option-card input,
+  .multiplayer-field input,
+  .multiplayer-field textarea {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .modal-copy,
+  #rulesText,
+  .settings-note { overflow-wrap: anywhere; }
+  .suit-btn { min-width: 0; }
+}
+
 /* Short landscape phones need a scrollable start card; overflow:hidden used only
    to clip decorative rings also clipped the Multiplayer action. */
 @media (max-height: 500px) and (orientation: landscape) {
