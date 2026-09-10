@@ -34,12 +34,12 @@
     }
   `;
   document.head.appendChild(runtimeCardStyle);
-  window.BELOTE_CLIENT_VERSION = '2026.09.10-duren-motion-1';
+  window.BELOTE_CLIENT_VERSION = '2026.09.10-duren-motion-2';
 
   // Dureń-style card motion: the real card is rendered at its destination and
   // settles quickly instead of travelling across the whole table for ~950 ms.
-  // Dureń uses 280 ms, cubic-bezier(.2,.8,.3,1), -60px, .86 scale and 6deg.
   const seenTrickCards = new Set();
+  let collectedTrickKey = '';
   const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
 
   const baseRotationFor = (node) => {
@@ -68,10 +68,71 @@
     });
   };
 
+  const collectionTarget = (winner) => {
+    const selector = ['#seatSouth', '#seatWest', '#seatNorth', '#seatEast'][winner];
+    if (!selector) return null;
+    const seat = document.querySelector(selector);
+    return seat?.querySelector('.nameplate') || seat;
+  };
+
+  const animateTrickCollection = (state) => {
+    if (!state || state.phase !== 'trick' || !Array.isArray(state.trick) || state.trick.length !== 4) return;
+
+    const key = state.trick.map(item => item?.card?.id).filter(Boolean).join('|');
+    if (!key || key === collectedTrickKey) return;
+    collectedTrickKey = key;
+
+    if (!Game?.prefs?.animations || prefersReducedMotion()) return;
+    const target = collectionTarget(state.lastWinner);
+    if (!target) return;
+
+    const targetRect = target.getBoundingClientRect();
+    const targetX = targetRect.left + targetRect.width / 2;
+    const targetY = targetRect.top + targetRect.height / 2;
+
+    document.querySelectorAll('#trick .trick-card').forEach((node, index) => {
+      if (typeof node.animate !== 'function') return;
+      const rect = node.getBoundingClientRect();
+      const dx = targetX - (rect.left + rect.width / 2);
+      const dy = targetY - (rect.top + rect.height / 2);
+      const baseRotation = baseRotationFor(node);
+      const collectRotation = index % 2 ? -8 : 8;
+
+      node.getAnimations().forEach(animation => {
+        try { animation.finish(); } catch (_) { /* no-op */ }
+      });
+
+      node.animate([
+        {
+          offset: 0,
+          opacity: 1,
+          transform: `translate(0px, 0px) scale(1) rotate(${baseRotation}deg)`
+        },
+        {
+          offset: 0.82,
+          opacity: 1
+        },
+        {
+          offset: 1,
+          opacity: 0,
+          transform: `translate(${dx}px, ${dy}px) scale(0.46) rotate(${collectRotation}deg)`
+        }
+      ], {
+        duration: 500,
+        easing: 'cubic-bezier(.32,0,.18,1)',
+        fill: 'forwards'
+      });
+    });
+  };
+
   const syncTrickAnimations = () => {
-    const trick = Game?.getState?.()?.trick || [];
+    const state = Game?.getState?.();
+    const trick = state?.trick || [];
     const currentIds = new Set(trick.map(item => item?.card?.id).filter(Boolean));
-    if (!currentIds.size) seenTrickCards.clear();
+    if (!currentIds.size) {
+      seenTrickCards.clear();
+      collectedTrickKey = '';
+    }
 
     document.querySelectorAll('#trick .trick-card').forEach(node => {
       const id = node.querySelector('[data-card]')?.dataset.card;
@@ -80,6 +141,8 @@
       animateTableEntry(node);
       seenTrickCards.add(id);
     });
+
+    animateTrickCollection(state);
   };
 
   const finishLegacyFlight = (flight) => {
@@ -107,6 +170,27 @@
   motionObserver.observe(document.body, { childList: true, subtree: true });
   syncTrickAnimations();
 
+  // The monolithic offline core still uses sleep(950) after the fourth card. Keep
+  // its logic intact, but shorten only that one timer to match Dureń's ~500 ms
+  // collection. Installing once more after multiplayer_core loads is deliberate:
+  // the legacy closure reliably resolves the latest global timer binding then.
+  const nativeSetTimeout = window.setTimeout;
+  const installTrickTimerPatch = () => {
+    window.setTimeout = function beloteDurenSetTimeout(handler, timeout, ...args) {
+      let delay = timeout;
+      const state = Game?.getState?.();
+      const completedTrick = Number(timeout) === 950 &&
+        state?.phase === 'trick' &&
+        Array.isArray(state.trick) && state.trick.length === 4 &&
+        document.querySelectorAll('#trick .trick-card').length === 4;
+      if (completedTrick) {
+        delay = (!Game?.prefs?.animations || prefersReducedMotion()) ? 10 : 520;
+      }
+      return nativeSetTimeout.call(window, handler, delay, ...args);
+    };
+  };
+  installTrickTimerPatch();
+
   // The offline default player label is "Ty", while online nicknames require 3+ chars.
   const normalizeDefaultNickname = () => {
     const input = document.querySelector('#playerName');
@@ -124,14 +208,15 @@
 
   const cardStyle = document.createElement('link');
   cardStyle.rel = 'stylesheet';
-  cardStyle.href = 'belote_cards.css?v=20260910-duren-motion-1';
+  cardStyle.href = 'belote_cards.css?v=20260910-duren-motion-2';
   cardStyle.dataset.beloteCards = 'shared';
   document.head.appendChild(cardStyle);
 
   // Preserve the canonical filename used by index.html while keeping the
   // authoritative client untouched in a dedicated core file.
   const script = document.createElement('script');
-  script.src = 'belote_multiplayer_core.js?v=20260910-duren-motion-1';
+  script.src = 'belote_multiplayer_core.js?v=20260910-duren-motion-2';
   script.async = false;
+  script.addEventListener('load', installTrickTimerPatch, { once: true });
   document.body.appendChild(script);
 })();
