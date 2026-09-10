@@ -171,13 +171,15 @@
   syncTrickAnimations();
 
   // The legacy game core waits 950 ms before clearing a completed trick. Dureń's
-  // collection completes in roughly 500 ms, so shorten only that specific trick
-  // hold. Other 950 ms timers (for example bot pacing) are left untouched.
+  // collection completes in roughly 500 ms, so shorten only a 950 ms timeout
+  // scheduled while all four real trick cards are on the rendered table. The DOM
+  // guard deliberately avoids touching the separate 950 ms calm-bot pacing timer.
   const nativeSetTimeout = window.setTimeout;
   window.setTimeout = function beloteDurenSetTimeout(handler, timeout, ...args) {
     let delay = timeout;
-    const state = Game?.getState?.();
-    if (Number(timeout) === 950 && state?.phase === 'trick') {
+    const completeTrickRendered = Number(timeout) === 950 &&
+      document.querySelectorAll('#trick .trick-card').length === 4;
+    if (completeTrickRendered) {
       delay = (!Game?.prefs?.animations || prefersReducedMotion()) ? 10 : 520;
     }
     return nativeSetTimeout.call(window, handler, delay, ...args);
