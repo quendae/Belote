@@ -1,11 +1,9 @@
 import { test, expect } from '@playwright/test';
 
-test('played card remains visible until the real trick card takes over', async ({ page }) => {
-  await page.goto('/belote_offline_single.html');
-  await page.waitForFunction(() => {
-    const style = document.querySelector('link[data-belote-cards="shared"]');
-    return !!window.BeloteNetworkBridge && !!style?.sheet;
-  });
+test('card backs and animation handoff survive missing shared stylesheet', async ({ page }) => {
+  await page.route('**/belote_cards.css*', route => route.abort());
+  await page.goto('/');
+  await page.waitForFunction(() => !!window.BeloteNetworkBridge);
 
   await page.evaluate(() => {
     window.__BELOTE_MANUAL_TEST__ = true;
@@ -18,7 +16,12 @@ test('played card remains visible until the real trick card takes over', async (
     state.trump = 'H';
     state.bidder = 0;
     state.active = 0;
-    state.hands = [[{ id: 'anim-H-A', s: 'H', r: 'A' }], [], [], []];
+    state.hands = [
+      [{ id: 'anim-H-A', s: 'H', r: 'A' }],
+      [{ id: 'opp-S-7', s: 'S', r: '7' }],
+      [],
+      []
+    ];
     state.trick = [];
     state.tricks = [0, 0];
     state.raw = [0, 0];
@@ -26,6 +29,11 @@ test('played card remains visible until the real trick card takes over', async (
     bridge.render();
     document.querySelector('#mainMenu')?.classList.add('hidden');
   });
+
+  const back = page.locator('.card-back').first();
+  await expect(back).toHaveCount(1);
+  const backBackground = await back.evaluate(el => getComputedStyle(el).backgroundImage);
+  expect(backBackground, 'card back fell back to the old green inline style').toMatch(/rgb\(25, 55, 93\)|rgb\(36, 77, 128\)|#19375d|#244d80/i);
 
   await page.evaluate(() => {
     window.BeloteNetworkBridge.play(0, 'anim-H-A');
