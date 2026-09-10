@@ -10,11 +10,15 @@
   transform-origin: 50% 118%;
 }
 
-/* Duren/Skat four-colour deck: clubs green, spades black, hearts red, diamonds blue. */
-.card.suit-C { color: #1e9d4a !important; }
-.card.suit-S { color: #14191d !important; }
-.card.suit-H { color: #bf2435 !important; }
-.card.suit-D { color: #236ae0 !important; }
+/* Preserve Belote's classic/two-colour setting; four-colour mode follows Duren/Skat. */
+.card.suit-C,
+.card.suit-S { color: #171b19 !important; }
+.card.suit-H,
+.card.suit-D { color: #bf2435 !important; }
+body.four-colors .card.suit-C { color: #1e9d4a !important; }
+body.four-colors .card.suit-S { color: #14191d !important; }
+body.four-colors .card.suit-H { color: #bf2435 !important; }
+body.four-colors .card.suit-D { color: #236ae0 !important; }
 
 .card .corner {
   position: absolute;
@@ -79,30 +83,51 @@
   pointer-events: none;
 }
 
+/* The original table has a 270px sidebar below 950px. At tablet portrait that,
+   together with the three 170px control buttons, forced the table 36px off-screen. */
 @media (max-width: 950px) {
+  .layout { grid-template-columns: 230px minmax(0, 1fr); }
+  .controlbar { flex-wrap: wrap; }
+  .controlbar .action { min-width: 136px; }
   .card .corner { font-size: 18px; }
   .card .corner small { font-size: 15px; }
   .card .center-suit { font-size: 41px; }
 }
 
 @media (max-width: 760px) {
+  .layout { display: block; }
   .card {
+    width: 58px;
+    height: 84px;
+    margin-left: -18px;
     border-radius: 9px;
   }
+  .card:first-child { margin-left: 0; }
   .card .corner {
     top: 5px;
     left: 6px;
-    font-size: 16px;
+    font-size: 15px;
   }
   .card .corner small {
     margin-top: 2px;
-    font-size: 14px;
+    font-size: 13px;
   }
   .card .corner.bottom {
     right: 6px;
     bottom: 5px;
   }
-  .card .center-suit { font-size: 33px; }
+  .card .center-suit { font-size: 30px; }
   .card:hover:not(:disabled) { transform: translateY(-9px); }
   .card-back::before { inset: 3px; border-radius: 4px; }
+}
+
+/* Short landscape phones need a scrollable start card; overflow:hidden used only
+   to clip decorative rings also clipped the Multiplayer action. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .overlay { padding: 8px; }
+  .menu-card {
+    max-height: calc(100dvh - 16px);
+    overflow: auto;
+    padding: 18px 22px;
+  }
 }
