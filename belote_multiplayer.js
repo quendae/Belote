@@ -170,20 +170,26 @@
   motionObserver.observe(document.body, { childList: true, subtree: true });
   syncTrickAnimations();
 
-  // The legacy game core waits 950 ms before clearing a completed trick. Dureń's
-  // collection completes in roughly 500 ms, so shorten only a 950 ms timeout
-  // scheduled while all four real trick cards are on the rendered table. The DOM
-  // guard deliberately avoids touching the separate 950 ms calm-bot pacing timer.
+  // The monolithic offline core still uses sleep(950) after the fourth card. Keep
+  // its logic intact, but shorten only that one timer to match Dureń's ~500 ms
+  // collection. Installing once more after multiplayer_core loads is deliberate:
+  // the legacy closure reliably resolves the latest global timer binding then.
   const nativeSetTimeout = window.setTimeout;
-  window.setTimeout = function beloteDurenSetTimeout(handler, timeout, ...args) {
-    let delay = timeout;
-    const completeTrickRendered = Number(timeout) === 950 &&
-      document.querySelectorAll('#trick .trick-card').length === 4;
-    if (completeTrickRendered) {
-      delay = (!Game?.prefs?.animations || prefersReducedMotion()) ? 10 : 520;
-    }
-    return nativeSetTimeout.call(window, handler, delay, ...args);
+  const installTrickTimerPatch = () => {
+    window.setTimeout = function beloteDurenSetTimeout(handler, timeout, ...args) {
+      let delay = timeout;
+      const state = Game?.getState?.();
+      const completedTrick = Number(timeout) === 950 &&
+        state?.phase === 'trick' &&
+        Array.isArray(state.trick) && state.trick.length === 4 &&
+        document.querySelectorAll('#trick .trick-card').length === 4;
+      if (completedTrick) {
+        delay = (!Game?.prefs?.animations || prefersReducedMotion()) ? 10 : 520;
+      }
+      return nativeSetTimeout.call(window, handler, delay, ...args);
+    };
   };
+  installTrickTimerPatch();
 
   // The offline default player label is "Ty", while online nicknames require 3+ chars.
   const normalizeDefaultNickname = () => {
@@ -211,5 +217,6 @@
   const script = document.createElement('script');
   script.src = 'belote_multiplayer_core.js?v=20260910-duren-motion-2';
   script.async = false;
+  script.addEventListener('load', installTrickTimerPatch, { once: true });
   document.body.appendChild(script);
 })();
