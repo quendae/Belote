@@ -83,6 +83,13 @@ body.four-colors .card.suit-D { color: #236ae0 !important; }
   pointer-events: none;
 }
 
+/* The flight clone must stay fully visible until cleanup clears flyingCardId and
+   renders the real trick card. Keeping opacity authoritative here removes the
+   blank frame caused by the inline keyframe fading the clone before hand-off. */
+.card-flight {
+  opacity: 1 !important;
+}
+
 /* The original table has a 270px sidebar below 950px. At tablet portrait that,
    together with the three 170px control buttons, forced the table 36px off-screen. */
 @media (max-width: 950px) {
