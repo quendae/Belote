@@ -49,8 +49,7 @@
   };
 
   const animateTableEntry = (node) => {
-    if (!node || seenTrickCards.has(node.dataset.beloteCardId)) return;
-    if (!Game?.prefs?.animations || prefersReducedMotion() || typeof node.animate !== 'function') return;
+    if (!node || !Game?.prefs?.animations || prefersReducedMotion() || typeof node.animate !== 'function') return;
 
     const baseRotation = baseRotationFor(node);
     node.animate([
@@ -78,8 +77,8 @@
       const id = node.querySelector('[data-card]')?.dataset.card;
       if (!id || !currentIds.has(id) || seenTrickCards.has(id)) return;
       node.dataset.beloteCardId = id;
-      seenTrickCards.add(id);
       animateTableEntry(node);
+      seenTrickCards.add(id);
     });
   };
 
