@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - feature/real-p2p-multiplayer
+      - feat/qqnd-authoritative-multiplayer
   pull_request:
     branches:
       - main
@@ -32,16 +32,11 @@ jobs:
       - name: Static client checks
         run: |
           node --check belote_multiplayer.js
-          grep -q 'belote_multiplayer.js' belote_offline_single.html
-          ! grep -q 'data-action="new-local"' belote_offline_single.html
-          ! grep -q 'setInterval(mpTick,180)' belote_offline_single.html
+          grep -q 'belote_multiplayer.js' index.html
+          grep -q 'wss://api.qqnd.fyi/api/v1/ws' belote_multiplayer.js
+          ! grep -q 'RTCPeerConnection' belote_multiplayer.js
+          ! grep -q 'game.state.commit' belote_multiplayer.js
+          ! grep -q 'game.state.publish' belote_multiplayer.js
 
       - name: Multiplayer gameplay regression
         run: npm run test:multiplayer
-
-      - name: Signaling Worker checks
-        working-directory: cloudflare-signaling
-        run: |
-          npm install
-          npm run check
-          npm run test:static
