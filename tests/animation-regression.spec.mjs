@@ -151,6 +151,12 @@ test('fourth card settles on table before completed trick is collected', async (
 
   expect(Date.now() - fourthPlayedAt, 'collection should begin only after the ~280 ms entry').toBeGreaterThanOrEqual(220);
 
-  await expect.poll(async () => page.locator('#trick .trick-card').count(), { timeout: 1100 }).toBe(0);
+  // Use tight browser-side polling for the timing assertion. expect.poll's
+  // exponential backoff can observe an 820 ms clear only after ~1.3 s.
+  await page.waitForFunction(
+    () => document.querySelectorAll('#trick .trick-card').length === 0,
+    undefined,
+    { timeout: 1000, polling: 25 }
+  );
   expect(Date.now() - fourthPlayedAt, 'the sequential entry + collection should still finish promptly').toBeLessThan(1000);
 });
