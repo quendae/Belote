@@ -6,6 +6,7 @@
   void QQND_WS_URL;
 
   const Game = window.BeloteNetworkBridge;
+  const nativeSetTimeout = window.setTimeout;
 
   // Critical card visuals live in the runtime too, not only in the optional shared
   // stylesheet. This keeps production correct when belote_cards.css is stale,
@@ -25,6 +26,23 @@
       border-radius: 5px;
       pointer-events: none;
     }
+    .contract-suit-icon {
+      display: inline-grid;
+      place-items: center;
+      width: 1.35em;
+      height: 1.35em;
+      margin-right: .38em;
+      border: 1px solid rgba(0,0,0,.28);
+      border-radius: 50%;
+      background: #fffdf5;
+      box-shadow: 0 1px 4px rgba(0,0,0,.35);
+      font: 900 1.08em/1 Georgia, serif;
+      vertical-align: -.12em;
+    }
+    .contract-suit-icon[data-suit="H"],
+    .contract-suit-icon[data-suit="D"] { color: #bb2134 !important; }
+    .contract-suit-icon[data-suit="C"],
+    .contract-suit-icon[data-suit="S"] { color: #171a1a !important; }
     /* The old 950 ms travelling clone is retained only as an internal handoff
        signal for the legacy game core. It must never be visible. */
     .card-flight,
@@ -34,12 +52,32 @@
     }
   `;
   document.head.appendChild(runtimeCardStyle);
-  window.BELOTE_CLIENT_VERSION = '2026.09.10-duren-motion-2';
+  window.BELOTE_CLIENT_VERSION = '1.0.0';
+
+  const SUIT_SYMBOLS = { C: '♣', S: '♠', H: '♥', D: '♦' };
+  const syncContractSuitIcon = () => {
+    const suit = Game?.getState?.()?.trump;
+    const target = document.querySelector('#contract');
+    if (!target || !SUIT_SYMBOLS[suit]) return;
+
+    const current = target.querySelector('.contract-suit-icon');
+    if (current?.dataset.suit === suit) return;
+    current?.remove();
+
+    const icon = document.createElement('span');
+    icon.className = 'contract-suit-icon';
+    icon.dataset.suit = suit;
+    icon.textContent = SUIT_SYMBOLS[suit];
+    icon.setAttribute('aria-hidden', 'true');
+    target.prepend(icon);
+  };
 
   // Dureń-style card motion: the real card is rendered at its destination and
   // settles quickly instead of travelling across the whole table for ~950 ms.
   const seenTrickCards = new Set();
+  const entryEndsAtByCard = new Map();
   let collectedTrickKey = '';
+  let pendingCollectionKey = '';
   const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
 
   const baseRotationFor = (node) => {
@@ -48,11 +86,16 @@
     return 0;
   };
 
-  const animateTableEntry = (node) => {
-    if (!node || !Game?.prefs?.animations || prefersReducedMotion() || typeof node.animate !== 'function') return;
+  const animateTableEntry = (node, cardId) => {
+    if (!node || !Game?.prefs?.animations || prefersReducedMotion() || typeof node.animate !== 'function') return null;
+
+    // Keep the landing deadline independently from the DOM node. resolveTrick()
+    // rerenders the whole trick immediately after the fourth card is exposed, so
+    // the original WAAPI target may be replaced while its 280 ms landing is active.
+    if (cardId) entryEndsAtByCard.set(cardId, performance.now() + 280);
 
     const baseRotation = baseRotationFor(node);
-    node.animate([
+    return node.animate([
       {
         opacity: 0.15,
         transform: `translateY(-60px) scale(0.86) rotate(${baseRotation + 6}deg)`
@@ -75,14 +118,35 @@
     return seat?.querySelector('.nameplate') || seat;
   };
 
+  const trickKey = (state) => state?.trick?.map(item => item?.card?.id).filter(Boolean).join('|') || '';
+
   const animateTrickCollection = (state) => {
     if (!state || state.phase !== 'trick' || !Array.isArray(state.trick) || state.trick.length !== 4) return;
 
-    const key = state.trick.map(item => item?.card?.id).filter(Boolean).join('|');
-    if (!key || key === collectedTrickKey) return;
-    collectedTrickKey = key;
+    const key = trickKey(state);
+    if (!key || key === collectedTrickKey || key === pendingCollectionKey) return;
 
-    if (!Game?.prefs?.animations || prefersReducedMotion()) return;
+    if (!Game?.prefs?.animations || prefersReducedMotion()) {
+      collectedTrickKey = key;
+      return;
+    }
+
+    // The fourth card is the semantic barrier. Its landing deadline survives the
+    // play -> trick rerender, so collection cannot race ahead of the visual landing.
+    const lastCardId = state.trick.at(-1)?.card?.id || '';
+    const entryEndsAt = entryEndsAtByCard.get(lastCardId) || 0;
+    const remaining = Math.max(0, entryEndsAt - performance.now());
+    if (remaining > 0) {
+      pendingCollectionKey = key;
+      nativeSetTimeout(() => {
+        if (pendingCollectionKey === key) pendingCollectionKey = '';
+        const current = Game?.getState?.();
+        if (trickKey(current) === key) animateTrickCollection(current);
+      }, Math.ceil(remaining) + 8);
+      return;
+    }
+
+    collectedTrickKey = key;
     const target = collectionTarget(state.lastWinner);
     if (!target) return;
 
@@ -129,16 +193,19 @@
     const state = Game?.getState?.();
     const trick = state?.trick || [];
     const currentIds = new Set(trick.map(item => item?.card?.id).filter(Boolean));
+
     if (!currentIds.size) {
       seenTrickCards.clear();
+      entryEndsAtByCard.clear();
       collectedTrickKey = '';
+      pendingCollectionKey = '';
     }
 
     document.querySelectorAll('#trick .trick-card').forEach(node => {
       const id = node.querySelector('[data-card]')?.dataset.card;
       if (!id || !currentIds.has(id) || seenTrickCards.has(id)) return;
       node.dataset.beloteCardId = id;
-      animateTableEntry(node);
+      animateTableEntry(node, id);
       seenTrickCards.add(id);
     });
 
@@ -157,6 +224,11 @@
     });
   };
 
+  const syncRuntimeUi = () => {
+    syncTrickAnimations();
+    syncContractSuitIcon();
+  };
+
   const motionObserver = new MutationObserver(records => {
     for (const record of records) {
       for (const added of record.addedNodes) {
@@ -165,16 +237,14 @@
         added.querySelectorAll?.('.card-flight').forEach(finishLegacyFlight);
       }
     }
-    queueMicrotask(syncTrickAnimations);
+    queueMicrotask(syncRuntimeUi);
   });
   motionObserver.observe(document.body, { childList: true, subtree: true });
-  syncTrickAnimations();
+  syncRuntimeUi();
 
   // The monolithic offline core still uses sleep(950) after the fourth card. Keep
-  // its logic intact, but shorten only that one timer to match Dureń's ~500 ms
-  // collection. Installing once more after multiplayer_core loads is deliberate:
-  // the legacy closure reliably resolves the latest global timer binding then.
-  const nativeSetTimeout = window.setTimeout;
+  // its logic intact, but give the fourth card 280 ms to settle first and then
+  // enough time for Dureń's 500 ms collection before clearing the trick state.
   const installTrickTimerPatch = () => {
     window.setTimeout = function beloteDurenSetTimeout(handler, timeout, ...args) {
       let delay = timeout;
@@ -184,7 +254,7 @@
         Array.isArray(state.trick) && state.trick.length === 4 &&
         document.querySelectorAll('#trick .trick-card').length === 4;
       if (completedTrick) {
-        delay = (!Game?.prefs?.animations || prefersReducedMotion()) ? 10 : 520;
+        delay = (!Game?.prefs?.animations || prefersReducedMotion()) ? 10 : 820;
       }
       return nativeSetTimeout.call(window, handler, delay, ...args);
     };
@@ -208,15 +278,18 @@
 
   const cardStyle = document.createElement('link');
   cardStyle.rel = 'stylesheet';
-  cardStyle.href = 'belote_cards.css?v=20260910-duren-motion-2';
+  cardStyle.href = 'belote_cards.css?v=20260910-1.0.0';
   cardStyle.dataset.beloteCards = 'shared';
   document.head.appendChild(cardStyle);
 
   // Preserve the canonical filename used by index.html while keeping the
   // authoritative client untouched in a dedicated core file.
   const script = document.createElement('script');
-  script.src = 'belote_multiplayer_core.js?v=20260910-duren-motion-2';
+  script.src = 'belote_multiplayer_core.js?v=20260910-1.0.0';
   script.async = false;
-  script.addEventListener('load', installTrickTimerPatch, { once: true });
+  script.addEventListener('load', () => {
+    installTrickTimerPatch();
+    syncRuntimeUi();
+  }, { once: true });
   document.body.appendChild(script);
 })();
