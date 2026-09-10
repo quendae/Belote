@@ -7,9 +7,6 @@
 
   const Game = window.BeloteNetworkBridge;
 
-  // Match the shared Duren/Skat four-colour card presentation by default.
-  if (Game?.prefs) Game.prefs.fourColors = true;
-
   // The offline default player label is "Ty", while online nicknames require 3+ chars.
   const normalizeDefaultNickname = () => {
     const input = document.querySelector('#playerName');
