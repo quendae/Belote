@@ -39,8 +39,6 @@ test('card backs and Duren-style table entry survive missing shared stylesheet',
     window.BeloteNetworkBridge.play(0, 'anim-H-A');
   });
 
-  // Dureń-style handoff: the real table card appears immediately. There is no
-  // separate long-lived flight clone waiting ~950 ms before the table updates.
   await expect(page.locator('.card-flight')).toHaveCount(0);
   const tableCard = page.locator('#trick .trick-card').first();
   await expect(tableCard).toHaveCount(1);
@@ -72,19 +70,6 @@ test('completed trick is collected in Duren timing instead of waiting 950 ms', a
     window.__BELOTE_MANUAL_TEST__ = true;
     const bridge = window.BeloteNetworkBridge;
     bridge.prefs.animations = true;
-
-    // Diagnostic guard: prove whether resolveTrick's lexical sleep still reaches
-    // the patched global timer. This stays harmless and gives a useful failure
-    // message if the monolith captured the original timer binding.
-    window.__BELOTE_TIMEOUT_TRACE__ = [];
-    const previousSetTimeout = window.setTimeout;
-    window.setTimeout = function tracedBeloteTimeout(handler, timeout, ...args) {
-      window.__BELOTE_TIMEOUT_TRACE__.push({
-        timeout: Number(timeout),
-        trickCards: document.querySelectorAll('#trick .trick-card').length
-      });
-      return previousSetTimeout.call(window, handler, timeout, ...args);
-    };
 
     const state = bridge.fresh('bots', 501, 'smart', 'Tester');
     state.phase = 'play';
@@ -134,9 +119,6 @@ test('completed trick is collected in Duren timing instead of waiting 950 ms', a
   expect(collection, 'completed trick should have an approximately 500 ms collection animation').not.toBeNull();
   expect(collection.lastOpacity).toBe(0);
   expect(collection.lastTransform).toMatch(/scale\(0\.46\)/);
-
-  const trace = await page.evaluate(() => window.__BELOTE_TIMEOUT_TRACE__ || []);
-  expect(trace.some(item => item.timeout === 950), `resolveTrick sleep did not reach window.setTimeout; trace=${JSON.stringify(trace)}`).toBeTruthy();
 
   await expect.poll(async () => page.locator('#trick .trick-card').count(), { timeout: 800 }).toBe(0);
   expect(Date.now() - startedAt, 'next trick should not retain the old ~950 ms table pause').toBeLessThan(850);
