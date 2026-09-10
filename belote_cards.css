@@ -1,0 +1,108 @@
+/* Shared playing-card look aligned with Duren and Skat. */
+.card {
+  border: 1px solid #c9cfcb;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #fff 0%, #f2f1ec 67%, #e4e1d9 100%);
+  box-shadow: 0 9px 18px rgba(0,0,0,.25), inset 0 1px #fff;
+  color: #171b19;
+  overflow: hidden;
+  transition: transform .14s ease, filter .14s ease, box-shadow .14s ease;
+  transform-origin: 50% 118%;
+}
+
+/* Duren/Skat four-colour deck: clubs green, spades black, hearts red, diamonds blue. */
+.card.suit-C { color: #1e9d4a !important; }
+.card.suit-S { color: #14191d !important; }
+.card.suit-H { color: #bf2435 !important; }
+.card.suit-D { color: #236ae0 !important; }
+
+.card .corner {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  top: 7px;
+  left: 8px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 21px;
+  line-height: .92;
+  font-weight: 900;
+  letter-spacing: -.04em;
+  text-align: center;
+  text-shadow: 0 1px rgba(255,255,255,.7);
+}
+.card .corner small {
+  display: block;
+  margin-top: 3px;
+  font-size: 18px;
+  line-height: .9;
+  font-weight: 800;
+}
+.card .corner.bottom {
+  top: auto;
+  left: auto;
+  right: 8px;
+  bottom: 7px;
+  transform: rotate(180deg);
+}
+.card .center-suit {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 51px;
+  filter: drop-shadow(0 1px 0 rgba(255,255,255,.45));
+}
+.card:hover:not(:disabled) {
+  transform: translateY(-14px);
+  box-shadow: 0 20px 28px rgba(0,0,0,.34), 0 0 0 2px rgba(216,179,95,.30);
+}
+.card.illegal {
+  opacity: 1;
+  filter: brightness(.55) saturate(.4);
+}
+
+/* Same blue woven back used by the current Duren/Skat card family. */
+.card-back {
+  position: relative;
+  overflow: hidden;
+  border: 2px solid #efe6d0;
+  background: repeating-linear-gradient(45deg, #19375d 0 6px, #244d80 6px 12px);
+  box-shadow: 0 8px 16px rgba(0,0,0,.30);
+}
+.card-back::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(255,255,255,.60);
+  border-radius: 5px;
+  pointer-events: none;
+}
+
+@media (max-width: 950px) {
+  .card .corner { font-size: 18px; }
+  .card .corner small { font-size: 15px; }
+  .card .center-suit { font-size: 41px; }
+}
+
+@media (max-width: 760px) {
+  .card {
+    border-radius: 9px;
+  }
+  .card .corner {
+    top: 5px;
+    left: 6px;
+    font-size: 16px;
+  }
+  .card .corner small {
+    margin-top: 2px;
+    font-size: 14px;
+  }
+  .card .corner.bottom {
+    right: 6px;
+    bottom: 5px;
+  }
+  .card .center-suit { font-size: 33px; }
+  .card:hover:not(:disabled) { transform: translateY(-9px); }
+  .card-back::before { inset: 3px; border-radius: 4px; }
+}
