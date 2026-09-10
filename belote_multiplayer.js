@@ -6,6 +6,7 @@
   void QQND_WS_URL;
 
   const Game = window.BeloteNetworkBridge;
+  const nativeSetTimeout = window.setTimeout;
 
   // Critical card visuals live in the runtime too, not only in the optional shared
   // stylesheet. This keeps production correct when belote_cards.css is stale,
@@ -74,6 +75,7 @@
   // Dureń-style card motion: the real card is rendered at its destination and
   // settles quickly instead of travelling across the whole table for ~950 ms.
   const seenTrickCards = new Set();
+  const entryEndsAtByCard = new Map();
   let collectedTrickKey = '';
   let pendingCollectionKey = '';
   const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
@@ -84,8 +86,13 @@
     return 0;
   };
 
-  const animateTableEntry = (node) => {
+  const animateTableEntry = (node, cardId) => {
     if (!node || !Game?.prefs?.animations || prefersReducedMotion() || typeof node.animate !== 'function') return null;
+
+    // Keep the landing deadline independently from the DOM node. resolveTrick()
+    // rerenders the whole trick immediately after the fourth card is exposed, so
+    // the original WAAPI target may be replaced while its 280 ms landing is active.
+    if (cardId) entryEndsAtByCard.set(cardId, performance.now() + 280);
 
     const baseRotation = baseRotationFor(node);
     return node.animate([
@@ -113,7 +120,7 @@
 
   const trickKey = (state) => state?.trick?.map(item => item?.card?.id).filter(Boolean).join('|') || '';
 
-  const animateTrickCollection = (state, entryBarrier = null) => {
+  const animateTrickCollection = (state) => {
     if (!state || state.phase !== 'trick' || !Array.isArray(state.trick) || state.trick.length !== 4) return;
 
     const key = trickKey(state);
@@ -124,16 +131,18 @@
       return;
     }
 
-    // The fourth card is the semantic barrier. Collection cannot begin until the
-    // exact table-entry animation created for state.trick.at(-1) has completed.
-    // This avoids races between multiple MutationObserver passes.
-    if (entryBarrier && entryBarrier.playState !== 'finished') {
+    // The fourth card is the semantic barrier. Its landing deadline survives the
+    // play -> trick rerender, so collection cannot race ahead of the visual landing.
+    const lastCardId = state.trick.at(-1)?.card?.id || '';
+    const entryEndsAt = entryEndsAtByCard.get(lastCardId) || 0;
+    const remaining = Math.max(0, entryEndsAt - performance.now());
+    if (remaining > 0) {
       pendingCollectionKey = key;
-      Promise.resolve(entryBarrier.finished).catch(() => undefined).then(() => {
+      nativeSetTimeout(() => {
         if (pendingCollectionKey === key) pendingCollectionKey = '';
         const current = Game?.getState?.();
         if (trickKey(current) === key) animateTrickCollection(current);
-      });
+      }, Math.ceil(remaining) + 8);
       return;
     }
 
@@ -184,11 +193,10 @@
     const state = Game?.getState?.();
     const trick = state?.trick || [];
     const currentIds = new Set(trick.map(item => item?.card?.id).filter(Boolean));
-    const lastCardId = trick.at(-1)?.card?.id || '';
-    let lastCardEntry = null;
 
     if (!currentIds.size) {
       seenTrickCards.clear();
+      entryEndsAtByCard.clear();
       collectedTrickKey = '';
       pendingCollectionKey = '';
     }
@@ -197,12 +205,11 @@
       const id = node.querySelector('[data-card]')?.dataset.card;
       if (!id || !currentIds.has(id) || seenTrickCards.has(id)) return;
       node.dataset.beloteCardId = id;
-      const entry = animateTableEntry(node);
-      if (id === lastCardId) lastCardEntry = entry;
+      animateTableEntry(node, id);
       seenTrickCards.add(id);
     });
 
-    animateTrickCollection(state, lastCardEntry);
+    animateTrickCollection(state);
   };
 
   const finishLegacyFlight = (flight) => {
@@ -238,7 +245,6 @@
   // The monolithic offline core still uses sleep(950) after the fourth card. Keep
   // its logic intact, but give the fourth card 280 ms to settle first and then
   // enough time for Dureń's 500 ms collection before clearing the trick state.
-  const nativeSetTimeout = window.setTimeout;
   const installTrickTimerPatch = () => {
     window.setTimeout = function beloteDurenSetTimeout(handler, timeout, ...args) {
       let delay = timeout;
