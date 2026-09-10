@@ -1,13 +1,15 @@
 # Belote production runtime
 
-Copy only the files below to the static runtime for `belote.qqnd.fyi`:
+Copy the files below to the static runtime for `belote.qqnd.fyi`:
 
 ```text
 index.html
 belote_multiplayer.js
+belote_multiplayer_core.js
+belote_cards.css
 ```
 
-`index.html` is the canonical entry point and references `belote_multiplayer.js` from the same directory.
+`index.html` is the canonical entry point. It loads `belote_multiplayer.js`, which applies the shared Duren/Skat card styling from `belote_cards.css` and then starts the authoritative QQND multiplayer client from `belote_multiplayer_core.js`.
 
 Do **not** copy these development/legacy paths to production:
 
