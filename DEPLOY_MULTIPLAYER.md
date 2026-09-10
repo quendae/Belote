@@ -1,96 +1,78 @@
-# Wdrożenie Belote i multiplayera P2P
+# Wdrożenie Belote — QQND Card Room
 
-Belote pozostaje grą przeglądarkową. Logika rozgrywki nie trafia na serwer gry: po zestawieniu połączeń gracze komunikują się przez WebRTC DataChannels, a mały Cloudflare Worker obsługuje wyłącznie sygnalizację.
-
-## Elementy wdrożenia
-
-| Element | Miejsce |
-| --- | --- |
-| `belote_offline_single.html` | serwer WWW |
-| `belote_multiplayer.js` | ten sam katalog WWW |
-| `cloudflare-signaling/` | Cloudflare Workers + Durable Objects |
-
-Domyślna konfiguracja Workera zakłada domenę `belote.qqnd.fyi` i trasę `belote.qqnd.fyi/api/*`. Jeżeli gra działa pod inną domeną, zmień `routes[].pattern` w `cloudflare-signaling/wrangler.jsonc`.
-
-## 1. Wdrożenie plików gry
-
-Wgraj do tego samego katalogu publicznego:
-
-- `belote_offline_single.html`
-- `belote_multiplayer.js`
-
-Tryb z botami nadal działa bez sygnalizacji. Multiplayer jest inicjalizowany dopiero po otwarciu jego okna.
-
-## 2. Pierwszy deploy sygnalizacji
-
-W katalogu `cloudflare-signaling`:
-
-```powershell
-npm install
-npx wrangler login
-npm run deploy
-```
-
-Worker używa Durable Object `SignalingRoom`. Pokój żyje maksymalnie 30 minut i przechowuje jedynie tymczasowe informacje potrzebne do zestawienia WebRTC: identyfikator pokoju, uwierzytelnienie, oferty i odpowiedzi SDP oraz przydział miejsca.
-
-## 3. Sprawdzenie usługi
-
-Po deployu otwórz:
+Belote korzysta ze wspólnego backendu `qqnd-game-server`. Produkcyjny klient łączy się wyłącznie z:
 
 ```text
-https://belote.qqnd.fyi/api/health
+wss://api.qqnd.fyi/api/v1/ws
 ```
 
-Oczekiwana odpowiedź:
+Nie wdrażaj per-game Cloudflare Workera, WebRTC, STUN ani sygnalizacji SDP. Katalog `cloudflare-signaling/` jest tymczasowo pozostawiony w repo tylko jako rollback historyczny do czasu zakończenia live smoke i nie należy do runtime produkcyjnego.
 
-```json
-{"ok":true,"service":"belote-signaling"}
+## Runtime frontendu
+
+Wgraj wyłącznie pliki wymienione w `DEPLOY_RUNTIME.md`. Entry pointem jest `index.html`.
+
+Klient obsługuje:
+
+- `session.create` / `session.resume`,
+- publiczne i prywatne pokoje,
+- listę publicznych pokojów,
+- start stołu czteroosobowego z opcjonalnymi botami na wolnych seatach,
+- ruchy wyłącznie jako `game.action`,
+- prywatne projekcje `game.state` z backendu,
+- `game.presence`, reconnect i bot takeover.
+
+## Model autorytetu
+
+Belote jest `server-authoritative`:
+
+- backend posiada talię, ręce, kolejność kart, aktywny seat, legalność licytacji i zagrań oraz punktację;
+- klient nie wysyła `game.state.commit` ani `game.state.publish`;
+- seat wynika z uwierzytelnionej sesji;
+- cudze ręce i stock są ukrywane po stronie serwera;
+- po rozłączeniu aktywna gra zachowuje seat przez 60 sekund;
+- po grace period substitute bot przejmuje dokładnie ten seat i bieżącą rękę;
+- po późniejszym `session.resume` gracz odbiera seat botowi i kontynuuje zastany stan bez cofania ruchów.
+
+## Kolejność wdrożenia
+
+Najpierw backend:
+
+```bash
+cd /opt/qqnd-game-server
+git pull
+npm install
+npm run typecheck
+npm test
+npm run build
+systemctl restart qqnd-game-server
+curl https://api.qqnd.fyi/api/v1/health
+npx wscat -c wss://api.qqnd.fyi/api/v1/ws
 ```
 
-Następnie:
+Dopiero po zielonym backendzie wdrażaj frontend. Po skopiowaniu runtime sprawdź `https://belote.qqnd.fyi/` w co najmniej dwóch niezależnych profilach/przeglądarkach.
 
-1. Otwórz Belote w dwóch niezależnych przeglądarkach lub urządzeniach.
-2. Gospodarz wybiera **Multiplayer online → Utwórz pokój**.
-3. Gość wpisuje wyłącznie krótki kod pokoju, nick i ewentualne hasło.
-4. SDP/ICE jest wymieniane automatycznie przez Worker — użytkownik nie kopiuje żadnych długich kodów.
-5. Gospodarz może wypełnić pozostałe wolne miejsca botami.
-6. Po starcie Worker zamyka pokój sygnalizacyjny; bieżąca rozgrywka pozostaje P2P.
+## Test live wymagany przed cleanupem legacy
 
-## 4. Model bezpieczeństwa i autorytetu
+Sprawdź kolejno:
 
-- gospodarz posiada jedyny autorytatywny stan gry;
-- goście wysyłają wyłącznie intencje (`bid`, `play`, `next-hand`);
-- gospodarz sprawdza turę, legalność karty i parametry akcji;
-- stan wysyłany do gościa jest filtrowany dla jego miejsca;
-- ręce przeciwników oraz kolejność kart w zapasie nie są wysyłane;
-- boty w stole multiplayer działają wyłącznie u gospodarza;
-- obiekty WebRTC i dane pokoju nie są zapisywane do lokalnego save'a.
+1. publiczny i prywatny pokój;
+2. pełne rozdanie 4 ludzi;
+3. pełne rozdanie 2 ludzi + 2 boty;
+4. rozłączenie krótsze niż 60 s i odzyskanie tego samego seata;
+5. rozłączenie dłuższe niż 60 s, bot takeover, kilka ruchów bota i późny reconnect/reclaim;
+6. brak wycieku cudzych rąk w ruchu WebSocket;
+7. brak `game.state.commit` / `game.state.publish` wysyłanych przez klienta.
 
-To rozwiązanie jest przeznaczone do prywatnych gier. Gospodarz technicznie zna pełny stan stołu; do rywalizacji odpornej na oszustwa potrzebny byłby zaufany serwer autorytatywny.
+Po pozytywnym live smoke można usunąć `cloudflare-signaling/` i pozostałe martwe fragmenty legacy P2P z monolitycznego HTML-a w osobnym cleanup commicie.
 
-## 5. Sieci restrykcyjne
+## Testy repo
 
-Konfiguracja klienta używa publicznych serwerów STUN. Większość domowych i mobilnych sieci powinna zestawić P2P bez dodatkowej infrastruktury. Sieci z restrykcyjnym NAT/firewallem mogą wymagać w przyszłości serwera TURN.
-
-## 6. Testy
-
-Klient:
-
-```powershell
+```bash
 npm install
 npx playwright install chromium
 npm run test:multiplayer
 npm run test:rules
 npm run test:design
+npm test
 ```
-
-Worker:
-
-```powershell
-cd cloudflare-signaling
-npm install
-npm run check
-npm run test:static
-```
-
-Test multiplayera nie wymaga publicznego Workera: korzysta z minimalnych hooków testowych, uruchamia autorytatywnego hosta, symuluje stoły human/bot i sprawdza pełne rozdania oraz filtrowanie ukrytych informacji.
