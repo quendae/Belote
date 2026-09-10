@@ -62,7 +62,34 @@ test('card backs and Duren-style table entry survive missing shared stylesheet',
   expect(entry.lastTransform).toMatch(/translateY\(0px\).*scale\(1\).*rotate\(0deg\)/);
 });
 
-test('completed trick is collected in Duren timing instead of waiting 950 ms', async ({ page }) => {
+test('contract shows the trump suit icon', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!window.BeloteNetworkBridge);
+
+  await page.evaluate(() => {
+    const bridge = window.BeloteNetworkBridge;
+    const state = bridge.fresh('bots', 501, 'smart', 'Tester');
+    state.phase = 'play';
+    state.deal = 1;
+    state.trump = 'H';
+    state.bidder = 0;
+    state.active = 0;
+    state.hands = [[], [], [], []];
+    state.trick = [];
+    state.tricks = [0, 0];
+    state.raw = [0, 0];
+    bridge.setState(state);
+    bridge.render();
+    document.querySelector('#mainMenu')?.classList.add('hidden');
+  });
+
+  const icon = page.locator('#contract .contract-suit-icon');
+  await expect(icon).toHaveCount(1);
+  await expect(icon).toHaveText('♥');
+  await expect(icon).toHaveAttribute('data-suit', 'H');
+});
+
+test('fourth card settles on table before completed trick is collected', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => !!window.BeloteNetworkBridge);
 
@@ -91,35 +118,39 @@ test('completed trick is collected in Duren timing instead of waiting 950 ms', a
     document.querySelector('#mainMenu')?.classList.add('hidden');
   });
 
-  const startedAt = Date.now();
   for (const [player, cardId] of [
     [0, 'collect-S-A'],
     [1, 'collect-S-7'],
-    [2, 'collect-S-8'],
-    [3, 'collect-S-9']
+    [2, 'collect-S-8']
   ]) {
     await page.evaluate(([p, id]) => window.BeloteNetworkBridge.play(p, id), [player, cardId]);
   }
 
+  const fourthPlayedAt = Date.now();
+  await page.evaluate(() => window.BeloteNetworkBridge.play(3, 'collect-S-9'));
   await page.waitForFunction(() => window.BeloteNetworkBridge.getState()?.phase === 'trick');
   await expect(page.locator('#trick .trick-card')).toHaveCount(4);
 
-  const collection = await page.locator('#trick .trick-card').first().evaluate(el => {
-    return el.getAnimations().map(animation => {
-      const timing = animation.effect?.getComputedTiming?.();
-      const frames = animation.effect?.getKeyframes?.() || [];
-      return {
-        duration: Number(timing?.duration || 0),
-        lastOpacity: Number(frames.at(-1)?.opacity),
-        lastTransform: String(frames.at(-1)?.transform || '')
-      };
-    }).find(item => item.duration >= 450 && item.duration <= 560) || null;
-  });
+  const fourthCard = page.locator('#trick .trick-card').filter({ has: page.locator('[data-card="collect-S-9"]') });
+  await expect(fourthCard).toHaveCount(1);
 
-  expect(collection, 'completed trick should have an approximately 500 ms collection animation').not.toBeNull();
-  expect(collection.lastOpacity).toBe(0);
-  expect(collection.lastTransform).toMatch(/scale\(0\.46\)/);
+  const immediateAnimations = await fourthCard.evaluate(el => el.getAnimations().map(animation => Number(animation.effect?.getComputedTiming?.()?.duration || 0)));
+  expect(immediateAnimations.some(duration => duration >= 240 && duration <= 350), 'fourth card should first run the normal table-entry animation').toBeTruthy();
+  expect(immediateAnimations.some(duration => duration >= 450 && duration <= 560), 'collection must not overlap the fourth-card entry').toBeFalsy();
 
-  await expect.poll(async () => page.locator('#trick .trick-card').count(), { timeout: 800 }).toBe(0);
-  expect(Date.now() - startedAt, 'next trick should not retain the old ~950 ms table pause').toBeLessThan(850);
+  await page.waitForTimeout(170);
+  const midAnimations = await fourthCard.evaluate(el => el.getAnimations().map(animation => Number(animation.effect?.getComputedTiming?.()?.duration || 0)));
+  expect(midAnimations.some(duration => duration >= 450 && duration <= 560), 'collection started before the fourth card had time to settle').toBeFalsy();
+
+  await expect.poll(async () => {
+    return fourthCard.evaluate(el => el.getAnimations().some(animation => {
+      const duration = Number(animation.effect?.getComputedTiming?.()?.duration || 0);
+      return duration >= 450 && duration <= 560;
+    }));
+  }, { timeout: 500 }).toBeTruthy();
+
+  expect(Date.now() - fourthPlayedAt, 'collection should begin only after the ~280 ms entry').toBeGreaterThanOrEqual(220);
+
+  await expect.poll(async () => page.locator('#trick .trick-card').count(), { timeout: 1100 }).toBe(0);
+  expect(Date.now() - fourthPlayedAt, 'the sequential entry + collection should still finish promptly').toBeLessThan(1000);
 });
