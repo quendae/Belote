@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('card backs and animation handoff survive missing shared stylesheet', async ({ page }) => {
+test('card backs and Duren-style table entry survive missing shared stylesheet', async ({ page }) => {
   await page.route('**/belote_cards.css*', route => route.abort());
   await page.goto('/');
   await page.waitForFunction(() => !!window.BeloteNetworkBridge);
@@ -38,27 +38,28 @@ test('card backs and animation handoff survive missing shared stylesheet', async
   await page.evaluate(() => {
     window.BeloteNetworkBridge.play(0, 'anim-H-A');
   });
-  const flight = page.locator('.card-flight');
-  await expect(flight).toHaveCount(1);
 
-  const lateFrame = await page.evaluate(() => {
-    const ghost = document.querySelector('.card-flight');
-    const animation = ghost?.getAnimations()[0];
-    if (!ghost || !animation) return null;
-    animation.pause();
-    animation.currentTime = 945;
+  // Dureń-style handoff: the real table card appears immediately. There is no
+  // separate long-lived flight clone waiting ~950 ms before the table updates.
+  await expect(page.locator('.card-flight')).toHaveCount(0);
+  const tableCard = page.locator('#trick .trick-card').first();
+  await expect(tableCard).toHaveCount(1);
+
+  const entry = await tableCard.evaluate(el => {
+    const animation = el.getAnimations()[0];
+    if (!animation) return null;
+    const timing = animation.effect?.getComputedTiming?.();
+    const frames = animation.effect?.getKeyframes?.() || [];
     return {
-      opacity: Number.parseFloat(getComputedStyle(ghost).opacity),
-      destinationCount: document.querySelectorAll('#trick .trick-card').length
+      duration: Number(timing?.duration || 0),
+      firstTransform: String(frames[0]?.transform || ''),
+      lastTransform: String(frames.at(-1)?.transform || '')
     };
   });
 
-  expect(lateFrame).not.toBeNull();
-  expect(
-    lateFrame.destinationCount > 0 || lateFrame.opacity >= 0.95,
-    `Card visually disappears during handoff: ${JSON.stringify(lateFrame)}`
-  ).toBe(true);
-
-  await page.evaluate(() => document.querySelector('.card-flight')?.getAnimations()[0]?.finish());
-  await expect(page.locator('#trick .trick-card')).toHaveCount(1);
+  expect(entry, 'new trick card should animate into its final table position').not.toBeNull();
+  expect(entry.duration).toBeGreaterThanOrEqual(240);
+  expect(entry.duration).toBeLessThanOrEqual(350);
+  expect(entry.firstTransform).toMatch(/translateY\(-60px\).*scale\(0\.86\).*rotate\(6deg\)/);
+  expect(entry.lastTransform).toMatch(/translateY\(0px\).*scale\(1\).*rotate\(0deg\)/);
 });
